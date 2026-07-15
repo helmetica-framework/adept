@@ -22,8 +22,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
+
 	//+kubebuilder:scaffold:imports
 	ritualsv1 "github.com/helmetica-framework/adept/api/v1"
+	"github.com/helmetica-framework/adept/controllers"
 )
 
 var (
@@ -147,6 +149,16 @@ func runController(cmd *cobra.Command, _ []string) error {
 
 	lifetimeCtx := cmd.Context()
 
+	acm := controllers.ActionManager{
+		Client:   mgr.GetClient(),
+		Scheme:   mgr.GetScheme(),
+		Recorder: mgr.GetEventRecorder("action-controller"),
+	}
+
+	if err := acm.SetupWithManager("action", mgr); err != nil {
+		return fmt.Errorf("unable to create Action controller: %w", err)
+	}
+
 	//+kubebuilder:scaffold:builder
 
 	if metricsCertWatcher != nil {
@@ -168,5 +180,6 @@ func runController(cmd *cobra.Command, _ []string) error {
 	if err := mgr.Start(lifetimeCtx); err != nil {
 		return fmt.Errorf("problem running manager: %w", err)
 	}
+
 	return nil
 }
