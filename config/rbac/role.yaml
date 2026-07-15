@@ -1,0 +1,48 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: manager-role
+rules:
+- apiGroups:
+  - batch
+  resources:
+  - jobs
+  verbs:
+  - create
+  - get
+  - list
+  - watch
+- apiGroups:
+  - events.k8s.io
+  resources:
+  - events
+  verbs:
+  - create
+  - patch
+- apiGroups:
+  - rituals.helmetica.io
+  resources:
+  - actions
+  verbs:
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - rituals.helmetica.io
+  resources:
+  - actions/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - rituals.helmetica.io
+  resources:
+  - definitions
+  verbs:
+  - get
+  - list
+  - watch

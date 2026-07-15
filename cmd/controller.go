@@ -23,14 +23,17 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	//+kubebuilder:scaffold:imports
+	ritualsv1 "github.com/helmetica-framework/adept/api/v1"
 )
 
-var metricsAddr string
-var enableLeaderElection bool
-var probeAddr string
-var zapOpts = zap.Options{
-	Development: true,
-}
+var (
+	metricsAddr          string
+	enableLeaderElection bool
+	probeAddr            string
+	zapOpts              = zap.Options{
+		Development: true,
+	}
+)
 
 func init() {
 	RootCmd.AddCommand(controllerCmd)
@@ -66,6 +69,7 @@ var controllerCmd = &cobra.Command{
 
 func newScheme() *runtime.Scheme {
 	scheme := runtime.NewScheme()
+	utilruntime.Must(ritualsv1.AddToScheme(scheme))
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	//+kubebuilder:scaffold:scheme
 	return scheme
@@ -83,7 +87,8 @@ func runController(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("failed to get flags: %w", err)
 	}
 
-	cmd.Println("Starting the controller manager",
+	cmd.Println(
+		"Starting the controller manager",
 		"controller-namespace", controllerNamespace,
 	)
 
