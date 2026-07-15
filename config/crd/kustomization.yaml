@@ -1,0 +1,7 @@
+resources:
+- bases/rituals.helmetica.io_definitions.yaml
+- bases/rituals.helmetica.io_actions.yaml
+#+kubebuilder:scaffold:crdkustomizeresource
+
+configurations:
+- kustomizeconfig.yaml

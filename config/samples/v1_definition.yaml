@@ -1,0 +1,16 @@
+apiVersion: rituals.helmetica.io/v1
+kind: Definition
+metadata:
+  name: restart
+spec:
+  description: Restart the application
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+            - name: restart
+              image: kubectl
+              command: ["kubectl"]
+              args: ["rollout", "restart", "deployment/my-service"]
+          restartPolicy: Never

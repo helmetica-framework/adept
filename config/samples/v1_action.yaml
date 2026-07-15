@@ -1,0 +1,7 @@
+apiVersion: rituals.helmetica.io/v1
+kind: Action
+metadata:
+  name: restart-now
+spec:
+  type: restart
+  claim: my-claim
