@@ -16,8 +16,12 @@ import (
 	ritualsv1 "github.com/helmetica-framework/adept/api/v1"
 )
 
-// maxNameLen is the Kubernetes name limit; Job names are clamped to it.
-const maxNameLen = 63
+const (
+	// maxNameLen is the Kubernetes name limit; Job names are clamped to it.
+	maxNameLen = 63
+
+	serviceAccount = "instance-admin"
+)
 
 // ActionManager reconciles Action objects: it creates a Job from the referenced
 // Definition and tracks the Job to a terminal Action phase.
@@ -87,6 +91,8 @@ func (r *ActionManager) createJob(ctx context.Context, act *ritualsv1.Action) er
 	if err := ctrl.SetControllerReference(act, job, r.Scheme); err != nil {
 		return fmt.Errorf("setting owner reference: %w", err)
 	}
+
+	job.Spec.Template.Spec.ServiceAccountName = serviceAccount
 
 	err = r.Create(ctx, job)
 	if err != nil && !apierrors.IsAlreadyExists(err) {
