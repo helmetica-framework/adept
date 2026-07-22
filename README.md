@@ -11,8 +11,10 @@ by the [transmuter](../transmuter); ferment ships defaults.
 The Definition and Job live in the *instance namespace*, resolved from where
 the Action was created:
 
-* **Instance namespace** (label `chrysopoeia.io/instance`, e.g. the instance
-  is plain helm-installed): the Action runs in place.
+* **Instance namespace** (label `chrysopoeia.io/instance`): the Action runs
+  in place. A namespace without any `chrysopoeia.io/*` annotation is not
+  chryso-managed (e.g. the instance is plain helm-installed) and the Action
+  also runs in place, even if it carries a claim reference.
 * **Claim namespace**: the Action names its claim (`spec.claim`,
   `spec.apiVersion`, `spec.kind`); the adept reads the claim's
   `status.instanceNamespace` and runs the Job there. Until the claim

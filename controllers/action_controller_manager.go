@@ -29,6 +29,10 @@ const (
 
 	instanceNamespaceLabel = "chrysopoeia.io/instance"
 
+	// chrysoAnnotationPrefix marks namespaces managed by chryso; namespaces
+	// without any such annotation were created outside the framework.
+	chrysoAnnotationPrefix = "chrysopoeia.io/"
+
 	serviceAccount = "instance-admin"
 
 	// actionNameAnnotation and actionNamespaceAnnotation point a Job back to
@@ -282,8 +286,9 @@ func JobMapFunc(ctx context.Context, o client.Object) []ctrl.Request {
 
 // instanceNamespace resolves the namespace the Action's Definition and Job
 // live in. An Action created in an instance namespace (carrying
-// instanceNamespaceLabel) runs in place. An Action created in a claim
-// namespace runs in the namespace named by the claim's
+// instanceNamespaceLabel) or in a namespace not managed by chryso (plain
+// helm-installed, no chrysopoeia.io/* annotations) runs in place. An Action
+// created in a claim namespace runs in the namespace named by the claim's
 // status.instanceNamespace; the claim is looked up by spec.claim and its GVK
 // (spec.apiVersion + spec.kind).
 func (r *ActionManager) instanceNamespace(ctx context.Context, act *ritualsv1.Action) (string, error) {
@@ -293,6 +298,13 @@ func (r *ActionManager) instanceNamespace(ctx context.Context, act *ritualsv1.Ac
 	}
 
 	if _, ok := ns.GetLabels()[instanceNamespaceLabel]; ok {
+		return act.GetNamespace(), nil
+	}
+
+	// Chryso-managed namespaces always carry chrysopoeia.io/* annotations. A
+	// namespace without any is a plain `helm install`ed instance: the Action
+	// runs in place, even if it carries a claim reference.
+	if !chrysoManaged(ns) {
 		return act.GetNamespace(), nil
 	}
 
@@ -327,4 +339,15 @@ func (r *ActionManager) instanceNamespace(ctx context.Context, act *ritualsv1.Ac
 	}
 
 	return instanceNs, nil
+}
+
+// chrysoManaged reports whether the namespace was created by chryso, which
+// annotates every namespace it manages with chrysopoeia.io/* annotations.
+func chrysoManaged(ns *corev1.Namespace) bool {
+	for k := range ns.GetAnnotations() {
+		if strings.HasPrefix(k, chrysoAnnotationPrefix) {
+			return true
+		}
+	}
+	return false
 }
