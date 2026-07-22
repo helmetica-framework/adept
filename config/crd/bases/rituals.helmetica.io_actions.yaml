@@ -46,6 +46,11 @@ spec:
           spec:
             description: ActionSpec triggers a ritual Definition.
             properties:
+              apiVersion:
+                description: |-
+                  ApiVersion is the claim's apiVersion ("group/version"). Required
+                  together with Kind when the Action lives in a claim namespace.
+                type: string
               args:
                 additionalProperties:
                   type: string
@@ -53,11 +58,19 @@ spec:
                   for now.
                 type: object
               claim:
-                description: Claim identifies the service instance. Stored, unused
-                  for now.
+                description: |-
+                  Claim identifies the service instance; with ApiVersion and Kind it
+                  derives the instance namespace when the Action lives in a claim
+                  namespace.
+                type: string
+              kind:
+                description: |-
+                  Kind is the claim's kind. Required together with ApiVersion when the
+                  Action lives in a claim namespace.
                 type: string
               type:
-                description: Type names the Definition (same namespace) to execute.
+                description: Type names the Definition (in the instance namespace)
+                  to execute.
                 minLength: 1
                 type: string
             required:
@@ -66,6 +79,10 @@ spec:
           status:
             properties:
               jobName:
+                type: string
+              message:
+                description: Message explains a Failed phase caused by a spec or claim
+                  problem.
                 type: string
               phase:
                 type: string

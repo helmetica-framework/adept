@@ -15,14 +15,26 @@ const (
 
 // ActionSpec triggers a ritual Definition.
 type ActionSpec struct {
-	// Type names the Definition (same namespace) to execute.
+	// Type names the Definition (in the instance namespace) to execute.
 	// +kubebuilder:validation:MinLength=1
 	// +required
 	Type string `json:"type"`
 
-	// Claim identifies the service instance. Stored, unused for now.
+	// Claim identifies the service instance; with ApiVersion and Kind it
+	// derives the instance namespace when the Action lives in a claim
+	// namespace.
 	// +optional
 	Claim string `json:"claim,omitempty"`
+
+	// ApiVersion is the claim's apiVersion ("group/version"). Required
+	// together with Kind when the Action lives in a claim namespace.
+	// +optional
+	ApiVersion string `json:"apiVersion,omitempty"`
+
+	// Kind is the claim's kind. Required together with ApiVersion when the
+	// Action lives in a claim namespace.
+	// +optional
+	Kind string `json:"kind,omitempty"`
 
 	// Args are made available to the job. Stored, not injected for now.
 	// +optional
@@ -34,6 +46,9 @@ type ActionStatus struct {
 	Phase ActionPhase `json:"phase,omitempty"`
 	// +optional
 	JobName string `json:"jobName,omitempty"`
+	// Message explains a Failed phase caused by a spec or claim problem.
+	// +optional
+	Message string `json:"message,omitempty"`
 }
 
 // Action triggers a ritual Definition and tracks its Job to completion.

@@ -8,8 +8,11 @@ import (
 	"github.com/stretchr/testify/require"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -25,7 +28,27 @@ func newTestScheme() *runtime.Scheme {
 	scheme := runtime.NewScheme()
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(ritualsv1.AddToScheme(scheme))
+	scheme.AddKnownTypeWithName(
+		schema.GroupVersionKind{Group: "example.org", Version: "v1", Kind: "Database"},
+		&unstructured.Unstructured{})
+	scheme.AddKnownTypeWithName(
+		schema.GroupVersionKind{Group: "example.org", Version: "v1", Kind: "DatabaseList"},
+		&unstructured.UnstructuredList{})
 	return scheme
+}
+
+// claim is the unstructured claim object the Action points at; instanceNs
+// lands in status.instanceNamespace ("" leaves the status empty).
+func claim(ns, instanceNs string) *unstructured.Unstructured {
+	c := &unstructured.Unstructured{}
+	c.SetAPIVersion("example.org/v1")
+	c.SetKind("Database")
+	c.SetNamespace(ns)
+	c.SetName("my-claim")
+	if instanceNs != "" {
+		utilruntime.Must(unstructured.SetNestedField(c.Object, instanceNs, "status", "instanceNamespace"))
+	}
+	return c
 }
 
 func definition(ns string) *ritualsv1.Definition {
@@ -49,6 +72,16 @@ func definition(ns string) *ritualsv1.Definition {
 	}
 }
 
+func namespace(name string, labels map[string]string) *corev1.Namespace {
+	return &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{
+		Name: name, Labels: labels,
+	}}
+}
+
+func instanceNS(name string) *corev1.Namespace {
+	return namespace(name, map[string]string{instanceNamespaceLabel: "true"})
+}
+
 func action(ns string, status ritualsv1.ActionStatus) *ritualsv1.Action {
 	return &ritualsv1.Action{
 		ObjectMeta: metav1.ObjectMeta{Name: "restart-now", Namespace: ns},
@@ -57,8 +90,16 @@ func action(ns string, status ritualsv1.ActionStatus) *ritualsv1.Action {
 	}
 }
 
-func reconcile(t *testing.T, objs ...client.Object) (client.Client, *events.FakeRecorder, ctrl.Result, error) {
-	t.Helper()
+// claimAction is an Action that names its claim's GVK, as required when the
+// Action lives in a claim namespace.
+func claimAction(ns string) *ritualsv1.Action {
+	act := action(ns, ritualsv1.ActionStatus{})
+	act.Spec.ApiVersion = "example.org/v1"
+	act.Spec.Kind = "Database"
+	return act
+}
+
+func newManager(objs ...client.Object) (*ActionManager, client.Client, *events.FakeRecorder) {
 	scheme := newTestScheme()
 	c := fake.NewClientBuilder().
 		WithScheme(scheme).
@@ -66,7 +107,14 @@ func reconcile(t *testing.T, objs ...client.Object) (client.Client, *events.Fake
 		WithObjects(objs...).
 		Build()
 	rec := events.NewFakeRecorder(8)
-	am := &ActionManager{Client: c, Scheme: scheme, Recorder: rec}
+	return &ActionManager{Client: c, Scheme: scheme, Recorder: rec}, c, rec
+}
+
+// reconcile runs one reconcile of "svc/restart-now" with "svc" set up as an
+// instance namespace, so the Job stays in place.
+func reconcile(t *testing.T, objs ...client.Object) (client.Client, *events.FakeRecorder, ctrl.Result, error) {
+	t.Helper()
+	am, c, rec := newManager(append(objs, instanceNS("svc"))...)
 	res, err := am.Reconcile(context.Background(), ctrl.Request{
 		NamespacedName: types.NamespacedName{Name: "restart-now", Namespace: "svc"},
 	})
@@ -88,6 +136,7 @@ func TestReconcile_CreatesJobAndSetsPending(t *testing.T) {
 	got := getAction(t, c)
 	assert.Equal(t, ritualsv1.ActionPhasePending, got.Status.Phase)
 	assert.Equal(t, "restart-now-restart", got.Status.JobName)
+	assert.Contains(t, got.Finalizers, actionFinalizer)
 
 	job := &batchv1.Job{}
 	require.NoError(t, c.Get(context.Background(),
@@ -190,4 +239,141 @@ func TestReconcile_AdoptsExistingJob(t *testing.T) {
 func TestReconcile_ActionGoneIsNoError(t *testing.T) {
 	_, _, _, err := reconcile(t)
 	require.NoError(t, err)
+}
+
+func TestInstanceNamespace(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("instance namespace runs in place", func(t *testing.T) {
+		am, _, _ := newManager(instanceNS("svc"))
+		got, err := am.instanceNamespace(ctx, action("svc", ritualsv1.ActionStatus{}))
+		require.NoError(t, err)
+		assert.Equal(t, "svc", got)
+	})
+
+	t.Run("claim namespace reads the claim's status.instanceNamespace", func(t *testing.T) {
+		am, _, _ := newManager(namespace("svc", nil), claim("svc", "db-instance"))
+		got, err := am.instanceNamespace(ctx, claimAction("svc"))
+		require.NoError(t, err)
+		assert.Equal(t, "db-instance", got)
+	})
+
+	t.Run("apiVersion without a group is an error", func(t *testing.T) {
+		am, _, _ := newManager(namespace("svc", nil))
+		act := claimAction("svc")
+		act.Spec.ApiVersion = "v1"
+		_, err := am.instanceNamespace(ctx, act)
+		assert.Error(t, err)
+	})
+
+	t.Run("missing claim is an error", func(t *testing.T) {
+		am, _, _ := newManager(namespace("svc", nil))
+		_, err := am.instanceNamespace(ctx, claimAction("svc"))
+		assert.ErrorContains(t, err, "no claim")
+	})
+
+	t.Run("claim without status.instanceNamespace is an error", func(t *testing.T) {
+		am, _, _ := newManager(namespace("svc", nil), claim("svc", ""))
+		_, err := am.instanceNamespace(ctx, claimAction("svc"))
+		assert.ErrorContains(t, err, "status.instanceNamespace")
+	})
+
+	t.Run("claim namespace without claim GVK is an error", func(t *testing.T) {
+		am, _, _ := newManager(namespace("svc", nil))
+		_, err := am.instanceNamespace(ctx, action("svc", ritualsv1.ActionStatus{}))
+		assert.Error(t, err)
+	})
+
+	t.Run("missing namespace is an error", func(t *testing.T) {
+		am, _, _ := newManager()
+		_, err := am.instanceNamespace(ctx, action("svc", ritualsv1.ActionStatus{}))
+		assert.Error(t, err)
+	})
+}
+
+func TestReconcile_ClaimNamespaceCreatesJobInInstanceNamespace(t *testing.T) {
+	ctx := context.Background()
+	act := claimAction("svc")
+	instNs := "db-instance"
+
+	am, c, _ := newManager(namespace("svc", nil), claim("svc", instNs), act, definition(instNs))
+	_, err := am.Reconcile(ctx, ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: "restart-now", Namespace: "svc"},
+	})
+	require.NoError(t, err)
+
+	job := &batchv1.Job{}
+	require.NoError(t, c.Get(ctx,
+		types.NamespacedName{Name: "restart-now-restart", Namespace: instNs}, job))
+	assert.Empty(t, job.OwnerReferences, "cross-namespace owner refs are invalid")
+	assert.Equal(t, ritualsv1.ActionPhasePending, getAction(t, c).Status.Phase)
+
+	// The annotations must route Job events back to the Action.
+	assert.Equal(t, []ctrl.Request{
+		{NamespacedName: types.NamespacedName{Name: "restart-now", Namespace: "svc"}},
+	}, JobMapFunc(ctx, job))
+}
+
+func TestReconcile_ClaimResolutionErrorBubblesIntoStatus(t *testing.T) {
+	ctx := context.Background()
+
+	// Claim namespace, but no claim object: message lands in status and the
+	// error is returned so the workqueue retries with backoff.
+	am, c, rec := newManager(namespace("svc", nil), claimAction("svc"))
+	_, err := am.Reconcile(ctx, ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: "restart-now", Namespace: "svc"},
+	})
+	require.ErrorContains(t, err, "no claim")
+
+	got := getAction(t, c)
+	assert.Empty(t, got.Status.Phase, "resolution failure is retried, not terminal")
+	assert.Contains(t, got.Status.Message, "no claim")
+
+	select {
+	case ev := <-rec.Events:
+		assert.Contains(t, ev, "ClaimResolveFailed")
+	default:
+		t.Fatal("expected a warning event for the failed claim resolution")
+	}
+
+	// A backoff retry with the same failure keeps the message and stays
+	// quiet: no second event, no status churn.
+	_, err = am.Reconcile(ctx, ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: "restart-now", Namespace: "svc"},
+	})
+	require.ErrorContains(t, err, "no claim")
+	assert.Equal(t, got.Status.Message, getAction(t, c).Status.Message)
+	select {
+	case ev := <-rec.Events:
+		t.Fatalf("unchanged failure must not emit another event, got %q", ev)
+	default:
+	}
+}
+
+func TestJobMapFunc_IgnoresForeignJobs(t *testing.T) {
+	assert.Empty(t, JobMapFunc(context.Background(), &batchv1.Job{}))
+}
+
+func TestReconcile_DeletePropagatesToJob(t *testing.T) {
+	ctx := context.Background()
+	act := action("svc", ritualsv1.ActionStatus{
+		Phase:   ritualsv1.ActionPhaseRunning,
+		JobName: "restart-now-restart",
+	})
+	act.Finalizers = []string{actionFinalizer}
+	job := &batchv1.Job{ObjectMeta: metav1.ObjectMeta{Name: "restart-now-restart", Namespace: "svc"}}
+
+	am, c, _ := newManager(instanceNS("svc"), act, job)
+	require.NoError(t, c.Delete(ctx, act), "delete only sets the deletion timestamp while the finalizer holds")
+
+	_, err := am.Reconcile(ctx, ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: "restart-now", Namespace: "svc"},
+	})
+	require.NoError(t, err)
+
+	err = c.Get(ctx, types.NamespacedName{Name: "restart-now-restart", Namespace: "svc"}, &batchv1.Job{})
+	assert.True(t, apierrors.IsNotFound(err), "job must be deleted with the action")
+
+	err = c.Get(ctx, types.NamespacedName{Name: "restart-now", Namespace: "svc"}, &ritualsv1.Action{})
+	assert.True(t, apierrors.IsNotFound(err), "finalizer removed, action gone")
 }
