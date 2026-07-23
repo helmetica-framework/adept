@@ -35,7 +35,7 @@ docs: ## Generate documentation
 	@echo "Nothing to do yet"
 
 .PHONY: generate
-generate: ## Generate manifests e.g. CRD, RBAC etc.
+generate: manifests ## Generate manifests e.g. CRD, RBAC etc.
 	go generate ./...
 	go tool sigs.k8s.io/controller-tools/cmd/controller-gen object paths="./..."
 
