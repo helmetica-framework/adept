@@ -286,11 +286,12 @@ func JobMapFunc(ctx context.Context, o client.Object) []ctrl.Request {
 
 // instanceNamespace resolves the namespace the Action's Definition and Job
 // live in. An Action created in an instance namespace (carrying
-// instanceNamespaceLabel) or in a namespace not managed by chryso (plain
-// helm-installed, no chrysopoeia.io/* annotations) runs in place. An Action
-// created in a claim namespace runs in the namespace named by the claim's
-// status.instanceNamespace; the claim is looked up by spec.claim and its GVK
-// (spec.apiVersion + spec.kind).
+// instanceNamespaceLabel) runs in place, as does a claimless Action in a
+// namespace not managed by chryso (plain helm-installed, no chrysopoeia.io/*
+// annotations). Any Action that names a claim runs in the namespace named by
+// the claim's status.instanceNamespace; the claim is looked up by spec.claim
+// and its GVK (spec.apiVersion + spec.kind), and a missing claim is an error
+// so it surfaces instead of a downstream missing-Definition failure.
 func (r *ActionManager) instanceNamespace(ctx context.Context, act *ritualsv1.Action) (string, error) {
 	ns := &corev1.Namespace{}
 	if err := r.Get(ctx, client.ObjectKey{Name: act.GetNamespace()}, ns); err != nil {
@@ -301,10 +302,9 @@ func (r *ActionManager) instanceNamespace(ctx context.Context, act *ritualsv1.Ac
 		return act.GetNamespace(), nil
 	}
 
-	// Chryso-managed namespaces always carry chrysopoeia.io/* annotations. A
-	// namespace without any is a plain `helm install`ed instance: the Action
-	// runs in place, even if it carries a claim reference.
-	if !chrysoManaged(ns) {
+	// No claim reference: only a plain `helm install`ed instance (namespace
+	// not managed by chryso) can run in place without one.
+	if act.Spec.Claim == "" && !chrysoManaged(ns) {
 		return act.GetNamespace(), nil
 	}
 
@@ -312,8 +312,8 @@ func (r *ActionManager) instanceNamespace(ctx context.Context, act *ritualsv1.Ac
 	if err != nil {
 		return "", fmt.Errorf("parsing claim apiVersion: %w", err)
 	}
-	if act.Spec.Kind == "" || gv.Group == "" || gv.Version == "" {
-		return "", fmt.Errorf("spec.kind and spec.apiVersion (group/version) must name the claim in namespace %s", act.GetNamespace())
+	if act.Spec.Claim == "" || act.Spec.Kind == "" || gv.Group == "" || gv.Version == "" {
+		return "", fmt.Errorf("spec.claim, spec.kind and spec.apiVersion (group/version) must name the claim in namespace %s", act.GetNamespace())
 	}
 
 	gvk := gv.WithKind(act.Spec.Kind)
@@ -321,11 +321,15 @@ func (r *ActionManager) instanceNamespace(ctx context.Context, act *ritualsv1.Ac
 	claim := unstructured.Unstructured{}
 	claim.SetGroupVersionKind(gvk)
 
+	// A named claim must exist, managed namespace or not: falling back to
+	// run-in-place here would surface later as a confusing missing-Definition
+	// error instead of the real problem.
 	err = r.Get(ctx, client.ObjectKey{Namespace: ns.GetName(), Name: act.Spec.Claim}, &claim)
 	if apierrors.IsNotFound(err) {
 		// %w keeps IsNotFound visible to callers (finalize relies on it).
 		return "", fmt.Errorf("no claim %s %q in namespace %s: %w", gvk.Kind, act.Spec.Claim, ns.GetName(), err)
 	}
+
 	if err != nil {
 		return "", fmt.Errorf("getting claim: %w", err)
 	}

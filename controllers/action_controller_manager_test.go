@@ -259,11 +259,26 @@ func TestInstanceNamespace(t *testing.T) {
 		assert.Equal(t, "svc", got)
 	})
 
-	t.Run("unmanaged namespace runs in place even with a claim reference", func(t *testing.T) {
+	t.Run("unmanaged namespace without a claim reference runs in place", func(t *testing.T) {
 		am, _, _ := newManager(namespace("svc", nil))
-		got, err := am.instanceNamespace(ctx, claimAction("svc"))
+		act := action("svc", ritualsv1.ActionStatus{})
+		act.Spec.Claim = ""
+		got, err := am.instanceNamespace(ctx, act)
 		require.NoError(t, err)
 		assert.Equal(t, "svc", got)
+	})
+
+	t.Run("unmanaged namespace with a missing claim is an error", func(t *testing.T) {
+		am, _, _ := newManager(namespace("svc", nil))
+		_, err := am.instanceNamespace(ctx, claimAction("svc"))
+		assert.ErrorContains(t, err, "no claim")
+	})
+
+	t.Run("unmanaged namespace with an existing claim reads its status.instanceNamespace", func(t *testing.T) {
+		am, _, _ := newManager(namespace("svc", nil), claim("svc", "db-instance"))
+		got, err := am.instanceNamespace(ctx, claimAction("svc"))
+		require.NoError(t, err)
+		assert.Equal(t, "db-instance", got)
 	})
 
 	t.Run("claim namespace reads the claim's status.instanceNamespace", func(t *testing.T) {
