@@ -8,6 +8,8 @@ MAKEFLAGS += --no-builtin-variables
 .SECONDARY:
 .DEFAULT_GOAL := help
 
+export GOEXPERIMENT = jsonv2
+
 JSONNET_FILES   ?= $(shell find . -type f -not -path './vendor/*' -not -path './contrib/lib/vendor/*' \( -name '*.*jsonnet' -or -name '*.libsonnet' \))
 
 include Makefile.vars.mk
