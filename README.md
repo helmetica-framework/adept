@@ -37,7 +37,7 @@ Against a kind (or any) cluster:
 
 ```bash
 kubectl apply -k config/crd
-make run          # in a second terminal
+just run          # in a second terminal
 kubectl apply -k config/samples
 kubectl get actions -w   # TYPE=restart, PHASE Pending -> Running -> Succeeded/Failed
 ```

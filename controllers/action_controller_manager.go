@@ -28,10 +28,6 @@ const (
 	// to it.
 	maxNameLen = 63
 
-	// chrysoAnnotationPrefix marks namespaces managed by chryso; namespaces
-	// without any such annotation were created outside the framework.
-	chrysoAnnotationPrefix = "chrysopoeia.io/"
-
 	serviceAccount = "instance-admin"
 
 	// actionNameAnnotation and actionNamespaceAnnotation point a Job back to
@@ -369,15 +365,4 @@ func (r *ActionManager) instanceNamespace(ctx context.Context, act *ritualsv1.Ac
 	}
 
 	return instanceNs, nil
-}
-
-// chrysoManaged reports whether the namespace was created by chryso, which
-// annotates every namespace it manages with chrysopoeia.io/* annotations.
-func chrysoManaged(ns *corev1.Namespace) bool {
-	for k := range ns.GetAnnotations() {
-		if strings.HasPrefix(k, chrysoAnnotationPrefix) {
-			return true
-		}
-	}
-	return false
 }
