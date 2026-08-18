@@ -9,6 +9,7 @@ bin
 testbin/*
 Dockerfile.cross
 adept
+__debug*
 
 # Goreleaser
 dist/
