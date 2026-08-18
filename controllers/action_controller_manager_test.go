@@ -73,24 +73,6 @@ func definition(ns string) *ritualsv1.Definition {
 	}
 }
 
-func namespace(name string, labels map[string]string) *corev1.Namespace {
-	return &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{
-		Name: name, Labels: labels,
-	}}
-}
-
-func instanceNS(name string) *corev1.Namespace {
-	return namespace(name, nil)
-}
-
-// claimNS is a chryso-managed claim namespace: annotated, but without the
-// instance label.
-func claimNS(name string) *corev1.Namespace {
-	ns := namespace(name, nil)
-	ns.Annotations = map[string]string{chrysoAnnotationPrefix + "managed": "true"}
-	return ns
-}
-
 func action(ns string, status ritualsv1.ActionStatus) *ritualsv1.Action {
 	return &ritualsv1.Action{
 		ObjectMeta: metav1.ObjectMeta{Name: "restart-now", Namespace: ns},
@@ -119,11 +101,11 @@ func newManager(objs ...client.Object) (*ActionManager, client.Client, *events.F
 	return &ActionManager{Client: c, Scheme: scheme, Recorder: rec, Log: logr.Discard()}, c, rec
 }
 
-// reconcile runs one reconcile of "svc/restart-now" with "svc" set up as an
-// instance namespace, so the Job stays in place.
+// reconcile runs one reconcile of "svc/restart-now". Callers that pass a
+// Definition in "svc" get the run-in-place path.
 func reconcile(t *testing.T, objs ...client.Object) (client.Client, *events.FakeRecorder, ctrl.Result, error) {
 	t.Helper()
-	am, c, rec := newManager(append(objs, instanceNS("svc"))...)
+	am, c, rec := newManager(objs...)
 	res, err := am.Reconcile(context.Background(), ctrl.Request{
 		NamespacedName: types.NamespacedName{Name: "restart-now", Namespace: "svc"},
 	})
@@ -158,7 +140,8 @@ func TestReconcile_CreatesJobAndSetsPending(t *testing.T) {
 }
 
 func TestReconcile_MissingDefinitionFails(t *testing.T) {
-	c, rec, _, err := reconcile(t, action("svc", ritualsv1.ActionStatus{}))
+	// The claim resolves, but the instance namespace holds no Definition.
+	c, rec, _, err := reconcile(t, claimAction("svc"), claim("svc", "db-instance"))
 	require.NoError(t, err, "missing definition is terminal, not a retryable error")
 
 	got := getAction(t, c)
@@ -253,72 +236,59 @@ func TestReconcile_ActionGoneIsNoError(t *testing.T) {
 func TestInstanceNamespace(t *testing.T) {
 	ctx := context.Background()
 
-	t.Run("instance namespace runs in place", func(t *testing.T) {
-		am, _, _ := newManager(instanceNS("svc"))
+	t.Run("definition in the action namespace runs in place", func(t *testing.T) {
+		am, _, _ := newManager(definition("svc"))
 		got, err := am.instanceNamespace(ctx, action("svc", ritualsv1.ActionStatus{}))
 		require.NoError(t, err)
 		assert.Equal(t, "svc", got)
 	})
 
-	t.Run("unmanaged namespace without a claim reference runs in place", func(t *testing.T) {
-		am, _, _ := newManager(namespace("svc", nil))
-		act := action("svc", ritualsv1.ActionStatus{})
-		act.Spec.Claim = ""
-		got, err := am.instanceNamespace(ctx, act)
+	t.Run("a local definition wins over the claim", func(t *testing.T) {
+		am, _, _ := newManager(definition("svc"), claim("svc", "db-instance"))
+		got, err := am.instanceNamespace(ctx, claimAction("svc"))
 		require.NoError(t, err)
 		assert.Equal(t, "svc", got)
 	})
 
-	t.Run("unmanaged namespace with a missing claim is an error", func(t *testing.T) {
-		am, _, _ := newManager(namespace("svc", nil))
-		_, err := am.instanceNamespace(ctx, claimAction("svc"))
-		assert.ErrorContains(t, err, "no claim")
+	t.Run("no definition and no claim reference is an error", func(t *testing.T) {
+		act := action("svc", ritualsv1.ActionStatus{})
+		act.Spec.Claim = ""
+		am, _, _ := newManager()
+		_, err := am.instanceNamespace(ctx, act)
+		assert.ErrorContains(t, err, "spec.claim")
 	})
 
-	t.Run("unmanaged namespace with an existing claim reads its status.instanceNamespace", func(t *testing.T) {
-		am, _, _ := newManager(namespace("svc", nil), claim("svc", "db-instance"))
-		got, err := am.instanceNamespace(ctx, claimAction("svc"))
-		require.NoError(t, err)
-		assert.Equal(t, "db-instance", got)
-	})
-
-	t.Run("claim namespace reads the claim's status.instanceNamespace", func(t *testing.T) {
-		am, _, _ := newManager(claimNS("svc"), claim("svc", "db-instance"))
-		got, err := am.instanceNamespace(ctx, claimAction("svc"))
-		require.NoError(t, err)
-		assert.Equal(t, "db-instance", got)
+	t.Run("no definition and no claim GVK is an error", func(t *testing.T) {
+		am, _, _ := newManager()
+		_, err := am.instanceNamespace(ctx, action("svc", ritualsv1.ActionStatus{}))
+		assert.ErrorContains(t, err, "spec.claim")
 	})
 
 	t.Run("apiVersion without a group is an error", func(t *testing.T) {
-		am, _, _ := newManager(claimNS("svc"))
 		act := claimAction("svc")
 		act.Spec.ApiVersion = "v1"
+		am, _, _ := newManager()
 		_, err := am.instanceNamespace(ctx, act)
 		assert.Error(t, err)
 	})
 
 	t.Run("missing claim is an error", func(t *testing.T) {
-		am, _, _ := newManager(claimNS("svc"))
+		am, _, _ := newManager()
 		_, err := am.instanceNamespace(ctx, claimAction("svc"))
 		assert.ErrorContains(t, err, "no claim")
 	})
 
+	t.Run("claim reads its status.instanceNamespace", func(t *testing.T) {
+		am, _, _ := newManager(claim("svc", "db-instance"))
+		got, err := am.instanceNamespace(ctx, claimAction("svc"))
+		require.NoError(t, err)
+		assert.Equal(t, "db-instance", got)
+	})
+
 	t.Run("claim without status.instanceNamespace is an error", func(t *testing.T) {
-		am, _, _ := newManager(claimNS("svc"), claim("svc", ""))
+		am, _, _ := newManager(claim("svc", ""))
 		_, err := am.instanceNamespace(ctx, claimAction("svc"))
 		assert.ErrorContains(t, err, "status.instanceNamespace")
-	})
-
-	t.Run("claim namespace without claim GVK is an error", func(t *testing.T) {
-		am, _, _ := newManager(claimNS("svc"))
-		_, err := am.instanceNamespace(ctx, action("svc", ritualsv1.ActionStatus{}))
-		assert.Error(t, err)
-	})
-
-	t.Run("missing namespace is an error", func(t *testing.T) {
-		am, _, _ := newManager()
-		_, err := am.instanceNamespace(ctx, action("svc", ritualsv1.ActionStatus{}))
-		assert.Error(t, err)
 	})
 }
 
@@ -327,7 +297,7 @@ func TestReconcile_ClaimNamespaceCreatesJobInInstanceNamespace(t *testing.T) {
 	act := claimAction("svc")
 	instNs := "db-instance"
 
-	am, c, _ := newManager(claimNS("svc"), claim("svc", instNs), act, definition(instNs))
+	am, c, _ := newManager(claim("svc", instNs), act, definition(instNs))
 	_, err := am.Reconcile(ctx, ctrl.Request{
 		NamespacedName: types.NamespacedName{Name: "restart-now", Namespace: "svc"},
 	})
@@ -350,7 +320,7 @@ func TestReconcile_ClaimResolutionErrorBubblesIntoStatus(t *testing.T) {
 
 	// Claim namespace, but no claim object: message lands in status and the
 	// error is returned so the workqueue retries with backoff.
-	am, c, rec := newManager(claimNS("svc"), claimAction("svc"))
+	am, c, rec := newManager(claimAction("svc"))
 	_, err := am.Reconcile(ctx, ctrl.Request{
 		NamespacedName: types.NamespacedName{Name: "restart-now", Namespace: "svc"},
 	})
@@ -394,7 +364,7 @@ func TestReconcile_DeletePropagatesToJob(t *testing.T) {
 	act.Finalizers = []string{actionFinalizer}
 	job := &batchv1.Job{ObjectMeta: metav1.ObjectMeta{Name: "restart-now-restart", Namespace: "svc"}}
 
-	am, c, _ := newManager(instanceNS("svc"), act, job)
+	am, c, _ := newManager(definition("svc"), act, job)
 	require.NoError(t, c.Delete(ctx, act), "delete only sets the deletion timestamp while the finalizer holds")
 
 	_, err := am.Reconcile(ctx, ctrl.Request{
