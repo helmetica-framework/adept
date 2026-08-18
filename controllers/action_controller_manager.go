@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/go-logr/logr"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -50,6 +51,7 @@ type ActionManager struct {
 	client.Client
 	Scheme   *runtime.Scheme
 	Recorder events.EventRecorder
+	Log      logr.Logger
 }
 
 // +kubebuilder:rbac:groups=rituals.helmetica.io,resources=definitions,verbs=get;list;watch
@@ -66,23 +68,30 @@ type ActionManager struct {
 // status.message and the error is returned so the workqueue retries with
 // exponential backoff.
 func (r *ActionManager) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	log := r.Log.WithValues("action", req.NamespacedName)
+
 	act := &ritualsv1.Action{}
 	err := r.Get(ctx, req.NamespacedName, act)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
+			log.V(1).Info("action is gone, nothing to do")
 			return ctrl.Result{}, nil
 		}
 		return ctrl.Result{}, err
 	}
 
+	log = log.WithValues("type", act.Spec.Type, "phase", act.Status.Phase)
+
 	// Deletion before the terminal check: even a finished Action must clean
 	// up its Job on the way out.
 	if !act.GetDeletionTimestamp().IsZero() {
+		log.Info("action is being deleted, cleaning up its job")
 		return ctrl.Result{}, r.finalize(ctx, act)
 	}
 
 	if act.Status.Phase == ritualsv1.ActionPhaseSucceeded ||
 		act.Status.Phase == ritualsv1.ActionPhaseFailed {
+		log.V(1).Info("action reached a terminal phase, skipping")
 		return ctrl.Result{}, nil
 	}
 
@@ -92,6 +101,7 @@ func (r *ActionManager) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 	// changes, so backoff retries don't spam.
 	jobNs, err := r.instanceNamespace(ctx, act)
 	if err != nil {
+		log.Info("could not resolve the instance namespace, retrying", "reason", err.Error())
 		if act.Status.Message != err.Error() {
 			r.Recorder.Eventf(act, nil, corev1.EventTypeWarning, "ClaimResolveFailed", "Resolve", "%s", err.Error())
 			act.Status.Message = err.Error()
@@ -103,6 +113,7 @@ func (r *ActionManager) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 	}
 	// Stale resolution message clears on the next status write.
 	act.Status.Message = ""
+	log.V(1).Info("resolved the instance namespace", "instanceNamespace", jobNs)
 
 	if act.Status.JobName == "" {
 		if controllerutil.AddFinalizer(act, actionFinalizer) {
@@ -121,10 +132,13 @@ func (r *ActionManager) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 // Job is owned by the Action only when both live in the same namespace —
 // cross-namespace owner references are invalid in Kubernetes.
 func (r *ActionManager) createJob(ctx context.Context, act *ritualsv1.Action, ns string) error {
+	log := r.Log.WithValues("action", client.ObjectKeyFromObject(act), "type", act.Spec.Type, "instanceNamespace", ns)
+
 	actD := &ritualsv1.Definition{}
 	err := r.Get(ctx, client.ObjectKey{Name: act.Spec.Type, Namespace: ns}, actD)
 	if apierrors.IsNotFound(err) {
 		// Missing Definition is terminal: warn and fail, don't requeue.
+		log.Info("no definition found, failing the action")
 		r.Recorder.Eventf(act, nil, corev1.EventTypeWarning, "DefinitionNotFound", "Create",
 			"no Definition %q in namespace %s", act.Spec.Type, ns)
 		act.Status.Phase = ritualsv1.ActionPhaseFailed
@@ -161,6 +175,11 @@ func (r *ActionManager) createJob(ctx context.Context, act *ritualsv1.Action, ns
 	if err != nil && !apierrors.IsAlreadyExists(err) {
 		return fmt.Errorf("creating job: %w", err)
 	}
+	if apierrors.IsAlreadyExists(err) {
+		log.Info("job already exists, adopting it", "job", job.GetName())
+	} else {
+		log.Info("created job", "job", job.GetName())
+	}
 
 	act.Status.JobName = job.GetName()
 	act.Status.Phase = ritualsv1.ActionPhasePending
@@ -172,10 +191,15 @@ func (r *ActionManager) createJob(ctx context.Context, act *ritualsv1.Action, ns
 // is a claim or namespace that is already deleted — the Job's namespace is
 // torn down with them, and the finalizer must not wedge the Action forever.
 func (r *ActionManager) finalize(ctx context.Context, act *ritualsv1.Action) error {
+	log := r.Log.WithValues("action", client.ObjectKeyFromObject(act))
+
 	if act.Status.JobName != "" {
 		ns, err := r.instanceNamespace(ctx, act)
 		if err != nil && !apierrors.IsNotFound(err) {
 			return err
+		}
+		if apierrors.IsNotFound(err) {
+			log.Info("claim or namespace already gone, leaving the job to be collected with it", "job", act.Status.JobName)
 		}
 		if err == nil {
 			job := &batchv1.Job{ObjectMeta: metav1.ObjectMeta{
@@ -186,6 +210,7 @@ func (r *ActionManager) finalize(ctx context.Context, act *ritualsv1.Action) err
 			if err != nil && !apierrors.IsNotFound(err) {
 				return fmt.Errorf("deleting job: %w", err)
 			}
+			log.Info("deleted job", "job", job.GetName(), "instanceNamespace", ns)
 		}
 	}
 	if controllerutil.RemoveFinalizer(act, actionFinalizer) {
@@ -197,6 +222,8 @@ func (r *ActionManager) finalize(ctx context.Context, act *ritualsv1.Action) err
 // trackJob maps the Action's Job status onto the Action phase. A deleted Job
 // leaves the phase unchanged; the status is written only when the phase moves.
 func (r *ActionManager) trackJob(ctx context.Context, act *ritualsv1.Action, ns string) error {
+	log := r.Log.WithValues("action", client.ObjectKeyFromObject(act), "job", act.Status.JobName, "instanceNamespace", ns)
+
 	job := &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      act.Status.JobName,
@@ -207,6 +234,7 @@ func (r *ActionManager) trackJob(ctx context.Context, act *ritualsv1.Action, ns 
 	err := r.Get(ctx, client.ObjectKeyFromObject(job), job)
 	if apierrors.IsNotFound(err) {
 		// Job gone (owner deleted): leave phase as-is.
+		log.V(1).Info("job is gone, keeping the current phase")
 		return nil
 	}
 	if err != nil {
@@ -226,6 +254,7 @@ func (r *ActionManager) trackJob(ctx context.Context, act *ritualsv1.Action, ns 
 	if phase == act.Status.Phase {
 		return nil
 	}
+	log.Info("action phase changed", "from", act.Status.Phase, "to", phase)
 	act.Status.Phase = phase
 	return r.updateStatus(ctx, act)
 }
@@ -286,7 +315,7 @@ func JobMapFunc(ctx context.Context, o client.Object) []ctrl.Request {
 // instanceNamespace resolves the namespace the Action's Definition and Job
 // live in.
 // We probe if the ritual definition is in the current namespace, if so, we assusme
-// that we're in the instance namespace.
+// that we're in the instance namespace. If not, we resolve the claim namespace and return that value.
 func (r *ActionManager) instanceNamespace(ctx context.Context, act *ritualsv1.Action) (string, error) {
 	instanceNs := act.GetNamespace()
 

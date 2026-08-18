@@ -153,6 +153,7 @@ func runController(cmd *cobra.Command, _ []string) error {
 		Client:   mgr.GetClient(),
 		Scheme:   mgr.GetScheme(),
 		Recorder: mgr.GetEventRecorder("action-controller"),
+		Log:      mgr.GetLogger().WithName("action-controller"),
 	}
 
 	if err := acm.SetupWithManager("action", mgr); err != nil {

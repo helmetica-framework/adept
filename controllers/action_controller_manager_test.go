@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/go-logr/logr"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	batchv1 "k8s.io/api/batch/v1"
@@ -79,7 +80,7 @@ func namespace(name string, labels map[string]string) *corev1.Namespace {
 }
 
 func instanceNS(name string) *corev1.Namespace {
-	return namespace(name, map[string]string{instanceNamespaceLabel: "true"})
+	return namespace(name, nil)
 }
 
 // claimNS is a chryso-managed claim namespace: annotated, but without the
@@ -115,7 +116,7 @@ func newManager(objs ...client.Object) (*ActionManager, client.Client, *events.F
 		WithObjects(objs...).
 		Build()
 	rec := events.NewFakeRecorder(8)
-	return &ActionManager{Client: c, Scheme: scheme, Recorder: rec}, c, rec
+	return &ActionManager{Client: c, Scheme: scheme, Recorder: rec, Log: logr.Discard()}, c, rec
 }
 
 // reconcile runs one reconcile of "svc/restart-now" with "svc" set up as an
