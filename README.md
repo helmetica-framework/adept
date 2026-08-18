@@ -6,7 +6,7 @@ The adept executes rituals for the Helmetica framework: it watches `Action`
 CRs (`rituals.helmetica.io/v1`), creates a Kubernetes Job from the
 `Definition` named by `spec.type`, and tracks the Job to `Succeeded` or
 `Failed` on the Action status. Definitions are packaged into reagent charts
-by the [transmuter](../transmuter); ferment ships defaults.
+by the [transmuter](https://github.com/helmetica-framework/transmuter); ferment ships defaults.
 
 The Definition and Job live in the *instance namespace*, resolved from where
 the Action was created:
