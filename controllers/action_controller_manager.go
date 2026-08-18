@@ -27,8 +27,6 @@ const (
 	// to it.
 	maxNameLen = 63
 
-	instanceNamespaceLabel = "chrysopoeia.io/instance"
-
 	// chrysoAnnotationPrefix marks namespaces managed by chryso; namespaces
 	// without any such annotation were created outside the framework.
 	chrysoAnnotationPrefix = "chrysopoeia.io/"
@@ -154,9 +152,10 @@ func (r *ActionManager) createJob(ctx context.Context, act *ritualsv1.Action, ns
 		if err := ctrl.SetControllerReference(act, job, r.Scheme); err != nil {
 			return fmt.Errorf("setting owner reference: %w", err)
 		}
+	} else {
+		// TODO: we'll need some rbac for the helm-install case...
+		job.Spec.Template.Spec.ServiceAccountName = serviceAccount
 	}
-
-	job.Spec.Template.Spec.ServiceAccountName = serviceAccount
 
 	err = r.Create(ctx, job)
 	if err != nil && !apierrors.IsAlreadyExists(err) {
@@ -285,28 +284,26 @@ func JobMapFunc(ctx context.Context, o client.Object) []ctrl.Request {
 }
 
 // instanceNamespace resolves the namespace the Action's Definition and Job
-// live in. An Action created in an instance namespace (carrying
-// instanceNamespaceLabel) runs in place, as does a claimless Action in a
-// namespace not managed by chryso (plain helm-installed, no chrysopoeia.io/*
-// annotations). Any Action that names a claim runs in the namespace named by
-// the claim's status.instanceNamespace; the claim is looked up by spec.claim
-// and its GVK (spec.apiVersion + spec.kind), and a missing claim is an error
-// so it surfaces instead of a downstream missing-Definition failure.
+// live in.
+// We probe if the ritual definition is in the current namespace, if so, we assusme
+// that we're in the instance namespace.
 func (r *ActionManager) instanceNamespace(ctx context.Context, act *ritualsv1.Action) (string, error) {
-	ns := &corev1.Namespace{}
-	if err := r.Get(ctx, client.ObjectKey{Name: act.GetNamespace()}, ns); err != nil {
-		return "", fmt.Errorf("getting action namespace: %w", err)
-	}
+	instanceNs := act.GetNamespace()
 
-	if _, ok := ns.GetLabels()[instanceNamespaceLabel]; ok {
+	def := &ritualsv1.Definition{}
+
+	objectKey := client.ObjectKey{Name: act.Spec.Type, Namespace: act.GetNamespace()}
+
+	err := r.Get(ctx, objectKey, def)
+	if err == nil {
 		return act.GetNamespace(), nil
 	}
-
-	// No claim reference: only a plain `helm install`ed instance (namespace
-	// not managed by chryso) can run in place without one.
-	if act.Spec.Claim == "" && !chrysoManaged(ns) {
-		return act.GetNamespace(), nil
+	if !apierrors.IsNotFound(err) {
+		return "", err
 	}
+
+	// We did not find the definition in the current namespace.
+	// Going through the claim
 
 	gv, err := schema.ParseGroupVersion(act.Spec.ApiVersion)
 	if err != nil {
@@ -324,10 +321,10 @@ func (r *ActionManager) instanceNamespace(ctx context.Context, act *ritualsv1.Ac
 	// A named claim must exist, managed namespace or not: falling back to
 	// run-in-place here would surface later as a confusing missing-Definition
 	// error instead of the real problem.
-	err = r.Get(ctx, client.ObjectKey{Namespace: ns.GetName(), Name: act.Spec.Claim}, &claim)
+	err = r.Get(ctx, client.ObjectKey{Namespace: act.GetNamespace(), Name: act.Spec.Claim}, &claim)
 	if apierrors.IsNotFound(err) {
 		// %w keeps IsNotFound visible to callers (finalize relies on it).
-		return "", fmt.Errorf("no claim %s %q in namespace %s: %w", gvk.Kind, act.Spec.Claim, ns.GetName(), err)
+		return "", fmt.Errorf("no claim %s %q in namespace %s: %w", gvk.Kind, act.Spec.Claim, act.GetNamespace(), err)
 	}
 
 	if err != nil {
@@ -339,7 +336,7 @@ func (r *ActionManager) instanceNamespace(ctx context.Context, act *ritualsv1.Ac
 		return "", fmt.Errorf("reading claim status.instanceNamespace: %w", err)
 	}
 	if !ok || instanceNs == "" {
-		return "", fmt.Errorf("claim %s/%s has no status.instanceNamespace", ns.GetName(), act.Spec.Claim)
+		return "", fmt.Errorf("claim %s/%s has no status.instanceNamespace", act.GetNamespace(), act.Spec.Claim)
 	}
 
 	return instanceNs, nil
