@@ -21,9 +21,9 @@ test: manifests generate
     go test ./... -race -coverprofile cover.tmp.out
     grep -v "zz_generated.deepcopy.go" cover.tmp.out > cover.out
 
-# Generate ClusterRole and CustomResourceDefinition objects
+# Generate ClusterRole, CustomResourceDefinition and webhook objects
 manifests:
-    {{ CONTROLLER_GEN }} rbac:roleName=manager-role crd:generateEmbeddedObjectMeta=true paths="./..." output:crd:artifacts:config=config/crd/bases
+    {{ CONTROLLER_GEN }} rbac:roleName=manager-role crd:generateEmbeddedObjectMeta=true webhook paths="./..." output:crd:artifacts:config=config/crd/bases output:webhook:artifacts:config=config/webhook
 
 # Generate deepcopy functions and manifests
 generate: manifests
@@ -54,9 +54,9 @@ lint: fmt vet generate manifests docs
 build-docker: binary
     docker build . --tag {{ GHCR_IMG }}
 
-# Run the controller from your host
+# Run the controller from your host.
 run: manifests generate fmt vet
-    go run main.go controller
+    go run main.go controller --enable-webhooks=false
 
 # Clean up the generated resources
 clean:

@@ -71,11 +71,16 @@ The samples create a `restart` Definition (kubectl rollout restart of a
 deployment), a `restart-now` Action that executes it, and a `sunday-night`
 MaintenanceWindow.
 
-Full deployment (CRDs, RBAC, manager) is packaged under `config/default`:
+Full deployment (CRDs, RBAC, manager, webhook) is packaged under
+`config/default`:
 
 ```bash
 kubectl apply -k config/default
 ```
+
+That overlay needs [cert-manager](https://cert-manager.io) in the cluster. The
+`MaintenanceWindow` validating webhook is served over TLS; cert-manager issues
+the certificate and injects its CA into the webhook configuration.
 
 ## Out of scope (for now)
 

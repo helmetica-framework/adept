@@ -5,9 +5,92 @@ namePrefix: adept-
 resources:
 - ../rbac
 - ../manager
+- ../webhook
+- ../certmanager
 - metrics_service.yaml
 
 patches:
 - path: manager_metrics_patch.yaml
   target:
     kind: Deployment
+- path: manager_webhook_patch.yaml
+  target:
+    kind: Deployment
+
+# The webhook serving certificate has to name the service it fronts, and the
+# webhook configuration has to name the certificate so cert-manager can inject
+# its CA. Neither name is known until namePrefix and namespace have been
+# applied, so both are stitched together here rather than hardcoded.
+replacements:
+# Service name and namespace into the certificate's dnsNames.
+- source:
+    kind: Service
+    version: v1
+    name: webhook-service
+    fieldPath: .metadata.name
+  targets:
+  - select:
+      kind: Certificate
+      group: cert-manager.io
+      version: v1
+      name: serving-cert
+    fieldPaths:
+    - .spec.dnsNames.0
+    - .spec.dnsNames.1
+    options:
+      delimiter: '.'
+      index: 0
+      create: true
+- source:
+    kind: Service
+    version: v1
+    name: webhook-service
+    fieldPath: .metadata.namespace
+  targets:
+  - select:
+      kind: Certificate
+      group: cert-manager.io
+      version: v1
+      name: serving-cert
+    fieldPaths:
+    - .spec.dnsNames.0
+    - .spec.dnsNames.1
+    options:
+      delimiter: '.'
+      index: 1
+      create: true
+
+# Certificate namespace and name into the webhook configuration's
+# cert-manager.io/inject-ca-from annotation, which is what fills in caBundle.
+# Without it the API server has no CA for the webhook and, because
+# failurePolicy is Fail, every MaintenanceWindow write is rejected.
+- source:
+    kind: Certificate
+    group: cert-manager.io
+    version: v1
+    name: serving-cert
+    fieldPath: .metadata.namespace
+  targets:
+  - select:
+      kind: ValidatingWebhookConfiguration
+    fieldPaths:
+    - .metadata.annotations.[cert-manager.io/inject-ca-from]
+    options:
+      delimiter: '/'
+      index: 0
+      create: true
+- source:
+    kind: Certificate
+    group: cert-manager.io
+    version: v1
+    name: serving-cert
+    fieldPath: .metadata.name
+  targets:
+  - select:
+      kind: ValidatingWebhookConfiguration
+    fieldPaths:
+    - .metadata.annotations.[cert-manager.io/inject-ca-from]
+    options:
+      delimiter: '/'
+      index: 1
+      create: true
