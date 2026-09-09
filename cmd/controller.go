@@ -22,6 +22,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
+	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	//+kubebuilder:scaffold:imports
 	ritualsv1 "github.com/helmetica-framework/adept/api/v1"
@@ -60,6 +61,12 @@ func init() {
 	controllerCmd.Flags().String("metrics-cert-path", "", "The directory that contains the metrics server certificate.")
 	controllerCmd.Flags().String("metrics-cert-name", "tls.crt", "The name of the metrics server certificate file.")
 	controllerCmd.Flags().String("metrics-cert-key", "tls.key", "The name of the metrics server key file.")
+
+	controllerCmd.Flags().Bool("enable-webhooks", true,
+		"Serve the admission webhooks. Set to false to run without certificates, e.g. against a cluster from your host.")
+	controllerCmd.Flags().String("webhook-cert-path", "", "The directory that contains the webhook certificate.")
+	controllerCmd.Flags().String("webhook-cert-name", "tls.crt", "The name of the webhook certificate file.")
+	controllerCmd.Flags().String("webhook-cert-key", "tls.key", "The name of the webhook key file.")
 }
 
 var controllerCmd = &cobra.Command{
@@ -85,7 +92,13 @@ func runController(cmd *cobra.Command, _ []string) error {
 	metricsCertName, mcnerr := cmd.Flags().GetString("metrics-cert-name")
 	metricsCertKey, mckerr := cmd.Flags().GetString("metrics-cert-key")
 
-	if err := multierr.Combine(cnerr, mcperr, mcnerr, mckerr, smerr); err != nil {
+	enableWebhooks, ewerr := cmd.Flags().GetBool("enable-webhooks")
+	webhookCertPath, wcperr := cmd.Flags().GetString("webhook-cert-path")
+	webhookCertName, wcnerr := cmd.Flags().GetString("webhook-cert-name")
+	webhookCertKey, wckerr := cmd.Flags().GetString("webhook-cert-key")
+
+	if err := multierr.Combine(cnerr, mcperr, mcnerr, mckerr, smerr,
+		ewerr, wcperr, wcnerr, wckerr); err != nil {
 		return fmt.Errorf("failed to get flags: %w", err)
 	}
 
@@ -133,10 +146,32 @@ func runController(cmd *cobra.Command, _ []string) error {
 		})
 	}
 
+	var webhookCertWatcher *certwatcher.CertWatcher
+	var webhookTLSOpts []func(*tls.Config)
+
+	if enableWebhooks && webhookCertPath != "" {
+		cmd.Println("Initializing webhook certificate watcher using provided certificates",
+			"webhook-cert-path", webhookCertPath, "webhook-cert-name", webhookCertName, "webhook-cert-key", webhookCertKey)
+
+		var err error
+		webhookCertWatcher, err = certwatcher.New(
+			filepath.Join(webhookCertPath, webhookCertName),
+			filepath.Join(webhookCertPath, webhookCertKey),
+		)
+		if err != nil {
+			return fmt.Errorf("unable to initialize webhook certificate watcher: %w", err)
+		}
+
+		webhookTLSOpts = append(webhookTLSOpts, func(config *tls.Config) {
+			config.GetCertificate = webhookCertWatcher.GetCertificate
+		})
+	}
+
 	restConf := ctrl.GetConfigOrDie()
 	mgr, err := ctrl.NewManager(restConf, ctrl.Options{
 		Scheme:                 scheme,
 		Metrics:                metricsServerOptions,
+		WebhookServer:          webhook.NewServer(webhook.Options{TLSOpts: webhookTLSOpts}),
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
 		LeaderElectionID:       "adept.rituals.helmetica.io",
@@ -160,7 +195,20 @@ func runController(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("unable to create Action controller: %w", err)
 	}
 
+	if enableWebhooks {
+		if err := (&controllers.MaintenanceWindowValidator{}).SetupWithManager(mgr); err != nil {
+			return fmt.Errorf("unable to create MaintenanceWindow webhook: %w", err)
+		}
+	}
+
 	//+kubebuilder:scaffold:builder
+
+	if webhookCertWatcher != nil {
+		cmd.Println("Adding webhook certificate watcher to manager")
+		if err := mgr.Add(webhookCertWatcher); err != nil {
+			return fmt.Errorf("unable to add webhook certificate watcher: %w", err)
+		}
+	}
 
 	if metricsCertWatcher != nil {
 		cmd.Println("Adding metrics certificate watcher to manager")

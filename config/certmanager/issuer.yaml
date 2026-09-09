@@ -1,0 +1,13 @@
+# Self-signed issuer for the webhook serving certificate. The API server trusts
+# it because cert-manager injects the same CA into the webhook configuration's
+# caBundle, so no external CA is involved.
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  labels:
+    app.kubernetes.io/name: adept
+    app.kubernetes.io/managed-by: kustomize
+  name: selfsigned-issuer
+  namespace: system
+spec:
+  selfSigned: {}
