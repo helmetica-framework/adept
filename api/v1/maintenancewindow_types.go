@@ -4,44 +4,55 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+const (
+	Monday    Day = "monday"
+	Tuesday   Day = "tuesday"
+	Wednesday Day = "wednesday"
+	Thursday  Day = "thursday"
+	Friday    Day = "friday"
+	Saturday  Day = "saturday"
+	Sunday    Day = "sunday"
+)
+
 // Day is a lowercase weekday name.
 // +kubebuilder:validation:Enum=sunday;monday;tuesday;wednesday;thursday;friday;saturday
 type Day string
 
 // MaintenanceWindowSpec declares a recurring window in which maintenance may
-// run. The window opens at Time on each day listed in DaysOfWeek, read as wall
-// clock in TimeZone, and lasts Duration.
+// start. The window opens at Time on each day listed in DaysOfWeek, read as wall
+// clock in TimeZone, and stays open for Duration.
 //
-// Instances sharing a window are spread across its first half by an offset
-// derived from the instance, so a window governing many instances does not
-// start all of them at once.
+// Instances sharing a window are spread across the window by an offset derived
+// from the instance, so a window governing many instances does not start all
+// of them at once. Maintenance that has started is never interrupted by the
+// window closing.
 type MaintenanceWindowSpec struct {
-	// DaysOfWeek are the days a window starts on. A window running past
-	// midnight ends on the following day, which need not be listed here.
+	// DaysOfWeek are the days a window starts on, with no repeats. A window
+	// running past midnight ends on the following day, which need not be
+	// listed here.
 	// +kubebuilder:validation:MinItems=1
 	// +kubebuilder:validation:MaxItems=7
-	// +kubebuilder:validation:XValidation:rule="self.all(d, self.exists_one(x, x == d))",message="daysOfWeek must not contain duplicates"
 	// +required
 	DaysOfWeek []Day `json:"daysOfWeek"`
 
 	// Time is the wall-clock start of the window in TimeZone, "HH:MM" in
-	// 24-hour form.
-	// +kubebuilder:validation:Pattern=`^([01][0-9]|2[0-3]):[0-5][0-9]$`
-	// +kubebuilder:validation:XValidation:rule="self.matches('^([01][0-9]|2[0-3]):[0-5][0-9]$')",message="time must be HH:MM in 24-hour form, for example 22:00"
+	// 24-hour form, for example "22:00".
 	// +required
 	Time string `json:"time"`
 
-	// Duration is how long the window lasts, measured as elapsed time rather
-	// than wall clock. Across a daylight-saving change the window therefore
-	// ends at a different wall-clock time than usual, and the instance keeps
-	// its full duration either way.
-	// +kubebuilder:validation:XValidation:rule="self.matches('^([0-9]+([.][0-9]+)?(ns|us|ms|s|m|h))+$') && duration(self) >= duration('1h') && duration(self) <= duration('24h')",message="duration must be a positive duration between 1h and 24h, for example 6h"
+	// Duration is the time span during which maintenance may start, between 1h and
+	// 24h. Instances sharing a window are spread across it so they do not all
+	// start at once.
+	//
+	// It does not bound how long maintenance runs. A run that starts inside
+	// the window keeps going until it finishes, which may be well after the window
+	// has closed.
+	// +kubebuilder:validation:XValidation:rule="self.matches('^([0-9]+([.][0-9]+)?(ns|us|ms|s|m|h))+$')",message="duration must be a valid duration, for example 6h"
 	// +required
 	Duration metav1.Duration `json:"duration"`
 
-	// TimeZone is an IANA zone name, for example "Europe/Zurich". The API
-	// server cannot check that the name is a real zone, so an unknown zone is
-	// only rejected when the window is resolved.
+	// TimeZone is the IANA zone name the window's Time is read in, for example
+	// "Europe/Zurich". Defaults to UTC.
 	// +kubebuilder:default="UTC"
 	// +kubebuilder:validation:MinLength=1
 	// +optional
