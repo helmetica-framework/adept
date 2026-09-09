@@ -1,0 +1,123 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.21.0
+  name: maintenancewindows.rituals.helmetica.io
+spec:
+  group: rituals.helmetica.io
+  names:
+    kind: MaintenanceWindow
+    listKind: MaintenanceWindowList
+    plural: maintenancewindows
+    singular: maintenancewindow
+  scope: Cluster
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.daysOfWeek
+      name: Days
+      type: string
+    - jsonPath: .spec.time
+      name: Time
+      type: string
+    - jsonPath: .spec.duration
+      name: Duration
+      type: string
+    - jsonPath: .spec.timeZone
+      name: Timezone
+      type: string
+    name: v1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          MaintenanceWindow is an operator-owned schedule that instances reference by
+          name. It is cluster-scoped: instances across every namespace share a small
+          set of named windows, which is what lets maintenance be batched.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              MaintenanceWindowSpec declares a recurring window in which maintenance may
+              run. The window opens at Time on each day listed in DaysOfWeek, read as wall
+              clock in TimeZone, and lasts Duration.
+
+              Instances sharing a window are spread across its first half by an offset
+              derived from the instance, so a window governing many instances does not
+              start all of them at once.
+            properties:
+              daysOfWeek:
+                description: |-
+                  DaysOfWeek are the days a window starts on. A window running past
+                  midnight ends on the following day, which need not be listed here.
+                items:
+                  description: Day is a lowercase weekday name.
+                  enum:
+                  - sunday
+                  - monday
+                  - tuesday
+                  - wednesday
+                  - thursday
+                  - friday
+                  - saturday
+                  type: string
+                maxItems: 7
+                minItems: 1
+                type: array
+                x-kubernetes-validations:
+                - message: daysOfWeek must not contain duplicates
+                  rule: self.all(d, self.exists_one(x, x == d))
+              duration:
+                description: |-
+                  Duration is how long the window lasts, measured as elapsed time rather
+                  than wall clock. Across a daylight-saving change the window therefore
+                  ends at a different wall-clock time than usual, and the instance keeps
+                  its full duration either way.
+                type: string
+                x-kubernetes-validations:
+                - message: duration must be a positive duration between 1h and 24h,
+                    for example 6h
+                  rule: self.matches('^([0-9]+([.][0-9]+)?(ns|us|ms|s|m|h))+$') &&
+                    duration(self) >= duration('1h') && duration(self) <= duration('24h')
+              time:
+                description: |-
+                  Time is the wall-clock start of the window in TimeZone, "HH:MM" in
+                  24-hour form.
+                pattern: ^([01][0-9]|2[0-3]):[0-5][0-9]$
+                type: string
+                x-kubernetes-validations:
+                - message: time must be HH:MM in 24-hour form, for example 22:00
+                  rule: self.matches('^([01][0-9]|2[0-3]):[0-5][0-9]$')
+              timeZone:
+                default: UTC
+                description: |-
+                  TimeZone is an IANA zone name, for example "Europe/Zurich". The API
+                  server cannot check that the name is a real zone, so an unknown zone is
+                  only rejected when the window is resolved.
+                minLength: 1
+                type: string
+            required:
+            - daysOfWeek
+            - duration
+            - time
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources: {}
