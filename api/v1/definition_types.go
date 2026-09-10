@@ -18,6 +18,7 @@ type DefinitionSpec struct {
 
 // Definition is a ritual: a named, on-demand job template.
 // +kubebuilder:object:root=true
+// +kubebuilder:ac:generate=true
 type Definition struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

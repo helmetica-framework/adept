@@ -79,6 +79,7 @@ type MaintenanceWindowSpec struct {
 // name. It is cluster-scoped: instances across every namespace share a small
 // set of named windows, which is what lets maintenance be batched.
 // +kubebuilder:object:root=true
+// +kubebuilder:ac:generate=true
 // +kubebuilder:resource:scope=Cluster
 // +kubebuilder:printcolumn:name="Days",type=string,JSONPath=`.spec.daysOfWeek`
 // +kubebuilder:printcolumn:name="Time",type=string,JSONPath=`.spec.time`
