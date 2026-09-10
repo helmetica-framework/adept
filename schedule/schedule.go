@@ -7,11 +7,11 @@
 // instance, so a window governing many instances does not start all of them at
 // once.
 //
-// Kubernetes owns the clock. This package produces only the schedule string
-// and time zone to put on a CronJob; the CronJob controller decides when to
-// fire, including across daylight-saving changes. Nothing here computes or
-// tracks individual occurrences, because a caller holding a CronJob has no use
-// for them.
+// Kubernetes owns the clock for anything a CronJob fires: CronSchedule
+// produces only the schedule string and time zone to put on one, and the
+// CronJob controller decides when it runs, including across daylight-saving
+// changes. NextRun is for the callers that have no CronJob to do that for them
+// and must wake at the same moment themselves.
 //
 // Nothing here reads the cluster. Every function is pure and takes the spec by
 // value, so the whole package is testable without an API server.
@@ -33,6 +33,8 @@ import (
 	// developer machine and fails in the cluster.
 	_ "time/tzdata"
 
+	"github.com/robfig/cron/v3"
+
 	ritualsv1 "github.com/helmetica-framework/adept/api/v1"
 )
 
@@ -43,6 +45,10 @@ const (
 	maxDuration = 24 * time.Hour
 
 	minutesPerDay = 24 * 60
+
+	// BumpLead is how far ahead of an instance's maintenance start work that has
+	// to happen first is scheduled.
+	BumpLead = 15 * time.Minute
 )
 
 // Weekdays provided by the time package, already map cleanly to cron.
@@ -157,4 +163,130 @@ func CronSchedule(spec ritualsv1.MaintenanceWindowSpec, identity string) (schedu
 	}
 
 	return fmt.Sprintf("%d %d * * %s", minute, hour, strings.Join(fields, ",")), timeZone, nil
+}
+
+// NextRun returns the first moment strictly after now at which identity's
+// maintenance starts, in the window's time zone. It is the same instant the
+// CronJob built from CronSchedule fires, for callers that have to act on the
+// schedule without one.
+//
+// Strictly after, so that a caller waking at its own start time computes the
+// following occurrence rather than the one it just handled.
+func NextRun(spec ritualsv1.MaintenanceWindowSpec, identity string, now time.Time) (time.Time, error) {
+	parsed, err := parse(spec, identity)
+	if err != nil {
+		return time.Time{}, err
+	}
+
+	return parsed.Next(now), nil
+}
+
+// parse renders identity's schedule and hands it to the same cron parser
+// Kubernetes runs the CronJob on.
+func parse(spec ritualsv1.MaintenanceWindowSpec, identity string) (cron.Schedule, error) {
+	cronSpec, tz, err := CronSchedule(spec, identity)
+	if err != nil {
+		return nil, fmt.Errorf("generating cron schedule: %w", err)
+	}
+
+	// CRON_TZ is not decoration: an unprefixed expression is parsed as
+	// time.Local, which is the machine's zone rather than the window's.
+	parsed, err := cron.ParseStandard(fmt.Sprintf("CRON_TZ=%s %s", tz, cronSpec))
+	if err != nil {
+		return nil, fmt.Errorf("parsing schedule %q: %w", cronSpec, err)
+	}
+
+	return parsed, nil
+}
+
+// NextBump returns the first moment strictly after now at which a maintenance should run:
+// BumpLead ahead of the start, or the instance's whole offset when that is shorter,
+// so a bump never lands before the window has opened.
+//
+// A now that already sits between the bump and the start takes the following
+// occurrence. Missing a bump leaves the instance as it is for another window,
+// which is the safe direction: it never acts outside one.
+func NextBump(spec ritualsv1.MaintenanceWindowSpec, identity string, now time.Time) (time.Time, error) {
+	lead := min(BumpLead, Offset(spec, identity))
+
+	run, err := NextRun(spec, identity, now)
+	if err != nil {
+		return time.Time{}, err
+	}
+
+	if bump := run.Add(-lead); bump.After(now) {
+		return bump, nil
+	}
+
+	// now is already inside the lead, so this window's bump has gone.
+	run, err = NextRun(spec, identity, run)
+	if err != nil {
+		return time.Time{}, err
+	}
+
+	return run.Add(-lead), nil
+}
+
+// PrevRun returns the most recent moment at or before now at which identity's
+// maintenance started. A window names at least one weekday, so an occurrence
+// always exists within the week before now.
+func PrevRun(spec ritualsv1.MaintenanceWindowSpec, identity string, now time.Time) (time.Time, error) {
+	parsed, err := parse(spec, identity)
+	if err != nil {
+		return time.Time{}, err
+	}
+
+	// Walked forward from eight days back, because the parser offers Next and
+	// nothing else. Eight days always contains an occurrence of any weekday.
+	var prev time.Time
+	for cursor := now.Add(-8 * 24 * time.Hour); ; {
+		next := parsed.Next(cursor)
+		if next.After(now) {
+			break
+		}
+		prev, cursor = next, next
+	}
+
+	if prev.IsZero() {
+		return time.Time{}, fmt.Errorf("no maintenance in the eight days before %s", now)
+	}
+
+	return prev, nil
+}
+
+// BumpDue reports the maintenance whose lead now falls in or after, and
+// whether that maintenance's window is still open.
+//
+// The occurrence is what a caller records once it has acted, so that a
+// restart, a re-list or an unrelated event does not act on it twice. Comparing
+// against a recorded occurrence is what makes this safe where a plain "is it
+// the lead right now" check is not: an instance whose offset is zero has a
+// zero-length lead and would never match one.
+func BumpDue(spec ritualsv1.MaintenanceWindowSpec, identity string, now time.Time) (occurrence time.Time, open bool, err error) {
+	next, err := NextRun(spec, identity, now)
+	if err != nil {
+		return time.Time{}, false, fmt.Errorf("getting next run: %w", err)
+	}
+
+	offset := Offset(spec, identity)
+	lead := min(BumpLead, offset)
+
+	occ := next.Add(-lead)
+
+	// At or after its lead, the coming maintenance is the one to account for.
+	// Standing exactly on it counts, or the instant a caller wakes for would
+	// send it back to the previous one.
+	if occ.After(now) {
+		prev, err := PrevRun(spec, identity, now)
+		if err != nil {
+			return time.Time{}, false, fmt.Errorf("getting previous run: %w", err)
+		}
+		occ = prev.Add(-lead)
+	}
+
+	// The window opened one offset before the maintenance and stays open for
+	// its whole duration, whatever the instance's share of it.
+	closes := occ.Add(lead - offset + spec.Duration.Duration)
+
+	return occ, now.Before(closes), nil
 }

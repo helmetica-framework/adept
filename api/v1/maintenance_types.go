@@ -41,6 +41,11 @@ type MaintenanceStatus struct {
 	// +optional
 	CronJobName string `json:"cronJobName,omitempty"`
 
+	// VersionUpdatedFor is the maintenance this instance's version was last
+	// moved for. It stays empty while the instance pins its own version.
+	// +optional
+	VersionUpdatedFor *metav1.Time `json:"versionUpdatedFor,omitempty"`
+
 	// Message explains why no schedule could be resolved.
 	// +optional
 	Message string `json:"message,omitempty"`
