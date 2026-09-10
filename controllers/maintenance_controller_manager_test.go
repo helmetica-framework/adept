@@ -115,7 +115,7 @@ func TestMaintenance_EmptyWindowUsesTheDefault(t *testing.T) {
 }
 
 func TestMaintenance_ScheduleMatchesTheSpreadIdentity(t *testing.T) {
-	// A4: the identity is namespace/name, not the namespace alone. With the
+	// The identity is namespace/name, not the namespace alone. With the
 	// namespace alone, two definitions in one instance namespace resolve to
 	// the same minute and fire together.
 	c, _, err := reconcileMaintenance(t,
@@ -131,7 +131,7 @@ func TestMaintenance_ScheduleMatchesTheSpreadIdentity(t *testing.T) {
 }
 
 func TestMaintenance_SuspendKeepsTheCronJob(t *testing.T) {
-	// A5: a vanished CronJob is indistinguishable from a broken controller.
+	// A vanished CronJob is indistinguishable from a broken controller.
 	md := maintenance("sunday-night")
 	md.Spec.Suspend = true
 
@@ -144,9 +144,9 @@ func TestMaintenance_SuspendKeepsTheCronJob(t *testing.T) {
 }
 
 func TestMaintenance_UnresolvableInputsAreRetryable(t *testing.T) {
-	// A6: a chart may render the definition before the operator creates the
-	// window, and a typo must recover without touching the instance. None of
-	// these is terminal.
+	// A chart may render the definition before the operator creates the window,
+	// and a typo must recover without touching the instance. None of these is
+	// terminal.
 	tests := []struct {
 		name string
 		objs []client.Object

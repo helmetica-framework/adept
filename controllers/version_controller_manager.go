@@ -2,13 +2,20 @@ package controllers
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
+	corev1 "k8s.io/api/core/v1"
+	apiextv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -24,8 +31,215 @@ import (
 // an object without either clobbering the other.
 const versionFieldOwner = client.FieldOwner("adept:maintenance-version")
 
-// TODO(human): RBAC to patch claim status. Claims are dynamic kinds, so this
-// cannot be a static marker for a known group (Q1).
+// +kubebuilder:rbac:groups=apiextensions.k8s.io,resources=customresourcedefinitions,verbs=get;list;watch
+
+// Writing a claim's status needs no marker here. Claims are dynamic kinds, so
+// no static rule can name them; the grant comes from the aggregated ClusterRole
+// chrysopoeia keeps in step with the CRDs it generates, bound in
+// config/rbac/chrysopoeia_claims_edit_role_binding.yaml.
+
+// The claim an instance namespace was rendered for, as chrysopoeia records it
+// there (release_controller.go:197). Note the camelCase in the first one.
+const (
+	claimAPIVersionAnnotation = "chrysopoeia.io/claim-apiVersion"
+	claimKindAnnotation       = "chrysopoeia.io/claim-kind"
+	claimNamespaceAnnotation  = "chrysopoeia.io/claim-namespace"
+	claimNameAnnotation       = "chrysopoeia.io/claim-name"
+)
+
+// ManagedLabel marks the CRDs chrysopoeia generates, with an empty value
+// (customresourcedefinitionsource_controller_manager.go:341). Exported because the
+// manager's cache is filtered by it too, and the two selectors must agree.
+const ManagedLabel = "chrysopoeia.io/managed"
+
+// claimRef identifies the claim behind an instance, enough to Get it as an
+// unstructured object.
+type claimRef struct {
+	GVK       schema.GroupVersionKind
+	Namespace string
+	Name      string
+}
+
+// claimRefFor reads the claim an instance namespace belongs to. A namespace
+// with none of the annotations is a plain helm install rather than a managed
+// instance, so it reports false and no error: there is no claim to bump and
+// nothing is wrong. A partial set is a bug, since chrysopoeia writes them all
+// in one apply.
+func (r *VersionManager) claimRefFor(ctx context.Context, namespace string) (claimRef, bool, error) {
+	ns := &corev1.Namespace{}
+
+	err := r.Get(ctx, client.ObjectKey{Name: namespace}, ns)
+	if err != nil {
+		return claimRef{}, false, fmt.Errorf("getting instance namespace: %w", err)
+	}
+
+	req := []string{
+		claimAPIVersionAnnotation,
+		claimKindAnnotation,
+		claimNameAnnotation,
+		claimNamespaceAnnotation,
+	}
+
+	missing := []string{}
+	for _, ann := range req {
+		if ns.GetAnnotations()[ann] == "" {
+			missing = append(missing, ann)
+		}
+	}
+
+	// not a managed ns, it's fine
+	if len(missing) == len(req) {
+		return claimRef{}, false, nil
+	}
+
+	if len(missing) > 0 {
+		return claimRef{}, false, fmt.Errorf("namespace %s is missing chrysopoeia annotations: %s", namespace, strings.Join(missing, ", "))
+	}
+
+	// FromAPIVersionAndKind swallows the error, so we go the long way
+	gv, err := schema.ParseGroupVersion(ns.GetAnnotations()[claimAPIVersionAnnotation])
+	if err != nil {
+		return claimRef{}, false, fmt.Errorf("parsing the claim apiVersion of namespace %s: %w", namespace, err)
+	}
+
+	gvk := gv.WithKind(ns.GetAnnotations()[claimKindAnnotation])
+
+	ref := claimRef{
+		Name:      ns.GetAnnotations()[claimNameAnnotation],
+		Namespace: ns.GetAnnotations()[claimNamespaceAnnotation],
+		GVK:       gvk,
+	}
+
+	return ref, true, nil
+}
+
+// claimFor gets the claim a ref points at. Claims are dynamic kinds, so this is
+// unstructured, the same way ActionManager.instanceNamespace reads one. The
+// error keeps IsNotFound: a claim that is not there yet is retryable.
+func (r *VersionManager) claimFor(ctx context.Context, ref claimRef) (*unstructured.Unstructured, error) {
+	claim := &unstructured.Unstructured{}
+
+	claim.SetGroupVersionKind(ref.GVK)
+
+	err := r.Get(ctx, client.ObjectKey{Name: ref.Name, Namespace: ref.Namespace}, claim)
+	if err != nil {
+		return nil, fmt.Errorf("getting claim: %w", err)
+	}
+
+	return claim, nil
+}
+
+// claimCRDFor finds the generated CRD behind a claim kind. It matches rather
+// than deriving the name, which is plural.group and only the CRD knows its own
+// plural.
+func (r *VersionManager) claimCRDFor(ctx context.Context, ref claimRef) (*apiextv1.CustomResourceDefinition, error) {
+	crds := &apiextv1.CustomResourceDefinitionList{}
+	if err := r.List(ctx, crds, client.MatchingLabels{ManagedLabel: ""}); err != nil {
+		return nil, fmt.Errorf("listing claim CRDs: %w", err)
+	}
+
+	i := slices.IndexFunc(crds.Items, func(crd apiextv1.CustomResourceDefinition) bool {
+		return crd.Spec.Group == ref.GVK.Group && crd.Spec.Names.Kind == ref.GVK.Kind
+	})
+	if i < 0 {
+		return nil, fmt.Errorf("no CustomResourceDefinition for %s in %s", ref.GVK.Kind, ref.GVK.Group)
+	}
+
+	return &crds.Items[i], nil
+}
+
+// newestVersion is the newest version the claim's schema allows. Chrysopoeia
+// sorts the enum descending when it generates the CRD
+// (customresourcedefinitionsource_controller_manager.go:309), so adept takes
+// the first entry and never decides what "newest" means.
+func newestVersion(crd *apiextv1.CustomResourceDefinition, ref claimRef) (string, error) {
+	i := slices.IndexFunc(crd.Spec.Versions, func(v apiextv1.CustomResourceDefinitionVersion) bool {
+		return v.Name == ref.GVK.Version
+	})
+	if i < 0 {
+		return "", fmt.Errorf("%s has no version %s", crd.GetName(), ref.GVK.Version)
+	}
+
+	props := crd.Spec.Versions[i].Schema
+	if props == nil || props.OpenAPIV3Schema == nil {
+		return "", fmt.Errorf("%s %s has no schema", ref.GVK.Kind, ref.GVK.Version)
+	}
+
+	spec, ok := props.OpenAPIV3Schema.Properties["spec"]
+	if !ok {
+		return "", fmt.Errorf("%s has no spec in its schema", ref.GVK.Kind)
+	}
+
+	version, ok := spec.Properties["version"]
+	if !ok || len(version.Enum) == 0 {
+		return "", fmt.Errorf("%s has no versions to select from", ref.GVK.Kind)
+	}
+
+	var newest string
+	if err := json.Unmarshal(version.Enum[0].Raw, &newest); err != nil {
+		return "", fmt.Errorf("reading the newest version of %s: %w", ref.GVK.Kind, err)
+	}
+
+	return newest, nil
+}
+
+// pinnedVersion is the version the user pinned on the claim, or "" when they
+// left the choice to the framework. Absent and empty mean the same thing: an
+// empty spec.version marks a managed instance.
+func pinnedVersion(claim *unstructured.Unstructured) (string, error) {
+	version, found, err := unstructured.NestedString(claim.Object, "spec", "version")
+	if err != nil {
+		return "", fmt.Errorf("can't get claim version: %w", err)
+	}
+
+	if !found {
+		return "", nil
+	}
+
+	return version, nil
+}
+
+// needsBump reports whether the claim should be moved onto newest. Rewriting an
+// unchanged version would churn the claim on every reconcile, and each write is
+// a revision downstream.
+//
+// A stale status.version on a pinned claim is left alone rather than corrected:
+// resolution reads spec.version first, so nothing downstream reads the stale
+// one.
+func needsBump(claim *unstructured.Unstructured, newest string) (bool, error) {
+	pinned, err := pinnedVersion(claim)
+	if err != nil {
+		return false, err
+	}
+
+	if pinned != "" {
+		return false, nil
+	}
+
+	version, _, err := unstructured.NestedString(claim.Object, "status", "version")
+	if err != nil {
+		return false, fmt.Errorf("can't get claim status version: %w", err)
+	}
+
+	return newest != version, nil
+}
+
+// bumpClaim writes newest to the claim's status.version. It applies a fresh
+// object carrying only that field; applying the claim as read would take
+// ownership of everything on it, including what chrysopoeia owns.
+func (r *VersionManager) bumpClaim(ctx context.Context, claim *unstructured.Unstructured, newest string) error {
+	sclaim := &unstructured.Unstructured{}
+	sclaim.SetGroupVersionKind(claim.GetObjectKind().GroupVersionKind())
+	sclaim.SetName(claim.GetName())
+	sclaim.SetNamespace(claim.GetNamespace())
+
+	err := unstructured.SetNestedField(sclaim.Object, newest, "status", "version")
+	if err != nil {
+		return fmt.Errorf("setting status.version on claim %s: %w", claim.GetName(), err)
+	}
+
+	return r.Status().Apply(ctx, client.ApplyConfigurationFromUnstructured(sclaim), client.ForceOwnership, versionFieldOwner)
+}
 
 // VersionManager moves an instance onto the newest version its claim allows, a
 // lead ahead of that instance's maintenance so the ritual runs against the
@@ -88,14 +302,9 @@ func (r *VersionManager) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	}
 
 	if open && !bumpedFor(md, occurrence) {
-		// TODO(human): resolve the claim from the instance namespace's
-		// chrysopoeia annotations and write the newest version to its status.
-		// Blocked on chrysopoeia U6, U7 and U8, and on the RBAC above.
-
-		if err := r.recordBump(ctx, md, occurrence); err != nil {
+		if err := r.bump(ctx, md, occurrence, log); err != nil {
 			return ctrl.Result{}, err
 		}
-		log.Info("moved the instance's version", "maintenance", occurrence)
 	}
 
 	bump, err := schedule.NextBump(window.Spec, identity, now)
@@ -104,6 +313,58 @@ func (r *VersionManager) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	}
 
 	return ctrl.Result{RequeueAfter: time.Until(bump)}, nil
+}
+
+// bump moves the instance's claim onto the newest version its schema allows.
+// Every reason to do nothing returns without a watermark, because the watermark
+// says a version was written.
+func (r *VersionManager) bump(ctx context.Context, md *ritualsv1.Maintenance, occurrence time.Time, log logr.Logger) error {
+	ref, managed, err := r.claimRefFor(ctx, md.GetNamespace())
+	if err != nil {
+		return err
+	}
+
+	if !managed {
+		log.V(1).Info("not a chrysopoeia instance, no claim to bump")
+		return nil
+	}
+
+	claim, err := r.claimFor(ctx, ref)
+	if err != nil {
+		return err
+	}
+
+	crd, err := r.claimCRDFor(ctx, ref)
+	if err != nil {
+		return err
+	}
+
+	newest, err := newestVersion(crd, ref)
+	if err != nil {
+		return err
+	}
+
+	needed, err := needsBump(claim, newest)
+	if err != nil {
+		return err
+	}
+
+	if !needed {
+		log.V(1).Info("claim needs no bump", "claim", ref.Name, "newest", newest)
+		return nil
+	}
+
+	if err := r.bumpClaim(ctx, claim, newest); err != nil {
+		return err
+	}
+
+	if err := r.recordBump(ctx, md, occurrence); err != nil {
+		return err
+	}
+
+	log.Info("moved the instance's version", "claim", ref.Name, "version", newest, "maintenance", occurrence)
+
+	return nil
 }
 
 // bumpedFor reports whether this maintenance has already been acted on. The
