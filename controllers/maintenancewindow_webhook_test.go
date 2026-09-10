@@ -8,6 +8,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	ritualsv1 "github.com/helmetica-framework/adept/api/v1"
 )
@@ -27,6 +29,71 @@ func maintenanceWindow() *ritualsv1.MaintenanceWindow {
 			TimeZone:   "Europe/Zurich",
 		},
 	}
+}
+
+// windowValidator builds a validator backed by objs. The uniqueness cases need
+// a client because they depend on what other windows exist; the schedule cases
+// above do not.
+func windowValidator(objs ...client.Object) *MaintenanceWindowValidator {
+	scheme := newTestScheme()
+	return &MaintenanceWindowValidator{
+		Client: fake.NewClientBuilder().WithScheme(scheme).WithObjects(objs...).Build(),
+	}
+}
+
+func defaultWindow(name string) *ritualsv1.MaintenanceWindow {
+	return namedWindow(name, true)
+}
+
+func TestMaintenanceWindowValidator_AcceptsTheFirstDefault(t *testing.T) {
+	v := windowValidator()
+
+	_, err := v.ValidateCreate(context.Background(), defaultWindow("sunday-night"))
+	require.NoError(t, err)
+}
+
+func TestMaintenanceWindowValidator_RejectsASecondDefault(t *testing.T) {
+	v := windowValidator(defaultWindow("sunday-night"))
+
+	_, err := v.ValidateCreate(context.Background(), defaultWindow("weekend"))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "sunday-night")
+}
+
+func TestMaintenanceWindowValidator_AllowsUpdatingTheExistingDefault(t *testing.T) {
+	// Re-applying the current default is not a conflict with itself. Skipping
+	// this case is the obvious bug: the window would become uneditable.
+	existing := defaultWindow("sunday-night")
+	v := windowValidator(existing)
+
+	updated := defaultWindow("sunday-night")
+	updated.Spec.Time = "23:00"
+
+	_, err := v.ValidateUpdate(context.Background(), existing, updated)
+	require.NoError(t, err)
+}
+
+func TestMaintenanceWindowValidator_AllowsClearingTheDefault(t *testing.T) {
+	// Leaving no default at all is legitimate. Instances that needed one find
+	// out from their MaintenanceDefinition status, not from admission.
+	existing := defaultWindow("sunday-night")
+	v := windowValidator(existing)
+
+	updated := maintenanceWindow()
+	updated.Name = "sunday-night"
+
+	_, err := v.ValidateUpdate(context.Background(), existing, updated)
+	require.NoError(t, err)
+}
+
+func TestMaintenanceWindowValidator_NonDefaultWindowsAreUnaffected(t *testing.T) {
+	v := windowValidator(defaultWindow("sunday-night"))
+
+	other := maintenanceWindow()
+	other.Name = "weekend"
+
+	_, err := v.ValidateCreate(context.Background(), other)
+	require.NoError(t, err)
 }
 
 func TestMaintenanceWindowValidator_AcceptsAValidWindow(t *testing.T) {

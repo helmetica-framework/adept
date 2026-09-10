@@ -15,6 +15,18 @@ rules:
 - apiGroups:
   - batch
   resources:
+  - cronjobs
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - batch
+  resources:
   - jobs
   verbs:
   - create
@@ -43,6 +55,7 @@ rules:
   - rituals.helmetica.io
   resources:
   - actions/status
+  - maintenancedefinitions/status
   verbs:
   - get
   - patch
@@ -51,6 +64,8 @@ rules:
   - rituals.helmetica.io
   resources:
   - definitions
+  - maintenancedefinitions
+  - maintenancewindows
   verbs:
   - get
   - list
