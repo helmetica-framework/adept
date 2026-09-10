@@ -23,14 +23,14 @@ rules:
   resources:
   - actions/status
   - definitions/status
-  - maintenancedefinitions/status
+  - maintenances/status
   verbs:
   - get
 - apiGroups:
   - rituals.helmetica.io
   resources:
   - maintenancewindows
-  - maintenancedefinitions
+  - maintenances
   verbs:
   - create
   - delete

@@ -2,11 +2,11 @@
 
 package v1
 
-// MaintenanceDefinitionStatusApplyConfiguration represents a declarative configuration of the MaintenanceDefinitionStatus type for use
+// MaintenanceStatusApplyConfiguration represents a declarative configuration of the MaintenanceStatus type for use
 // with apply.
 //
-// MaintenanceDefinitionStatus reports the schedule this instance resolved to.
-type MaintenanceDefinitionStatusApplyConfiguration struct {
+// MaintenanceStatus reports the schedule this instance resolved to.
+type MaintenanceStatusApplyConfiguration struct {
 	// Schedule is the cron expression this instance runs on, including its
 	// offset within the window.
 	Schedule *string `json:"schedule,omitempty"`
@@ -19,16 +19,16 @@ type MaintenanceDefinitionStatusApplyConfiguration struct {
 	Message *string `json:"message,omitempty"`
 }
 
-// MaintenanceDefinitionStatusApplyConfiguration constructs a declarative configuration of the MaintenanceDefinitionStatus type for use with
+// MaintenanceStatusApplyConfiguration constructs a declarative configuration of the MaintenanceStatus type for use with
 // apply.
-func MaintenanceDefinitionStatus() *MaintenanceDefinitionStatusApplyConfiguration {
-	return &MaintenanceDefinitionStatusApplyConfiguration{}
+func MaintenanceStatus() *MaintenanceStatusApplyConfiguration {
+	return &MaintenanceStatusApplyConfiguration{}
 }
 
 // WithSchedule sets the Schedule field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the Schedule field is set to the value of the last call.
-func (b *MaintenanceDefinitionStatusApplyConfiguration) WithSchedule(value string) *MaintenanceDefinitionStatusApplyConfiguration {
+func (b *MaintenanceStatusApplyConfiguration) WithSchedule(value string) *MaintenanceStatusApplyConfiguration {
 	b.Schedule = &value
 	return b
 }
@@ -36,7 +36,7 @@ func (b *MaintenanceDefinitionStatusApplyConfiguration) WithSchedule(value strin
 // WithObservedGeneration sets the ObservedGeneration field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the ObservedGeneration field is set to the value of the last call.
-func (b *MaintenanceDefinitionStatusApplyConfiguration) WithObservedGeneration(value int64) *MaintenanceDefinitionStatusApplyConfiguration {
+func (b *MaintenanceStatusApplyConfiguration) WithObservedGeneration(value int64) *MaintenanceStatusApplyConfiguration {
 	b.ObservedGeneration = &value
 	return b
 }
@@ -44,7 +44,7 @@ func (b *MaintenanceDefinitionStatusApplyConfiguration) WithObservedGeneration(v
 // WithCronJobName sets the CronJobName field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the CronJobName field is set to the value of the last call.
-func (b *MaintenanceDefinitionStatusApplyConfiguration) WithCronJobName(value string) *MaintenanceDefinitionStatusApplyConfiguration {
+func (b *MaintenanceStatusApplyConfiguration) WithCronJobName(value string) *MaintenanceStatusApplyConfiguration {
 	b.CronJobName = &value
 	return b
 }
@@ -52,7 +52,7 @@ func (b *MaintenanceDefinitionStatusApplyConfiguration) WithCronJobName(value st
 // WithMessage sets the Message field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the Message field is set to the value of the last call.
-func (b *MaintenanceDefinitionStatusApplyConfiguration) WithMessage(value string) *MaintenanceDefinitionStatusApplyConfiguration {
+func (b *MaintenanceStatusApplyConfiguration) WithMessage(value string) *MaintenanceStatusApplyConfiguration {
 	b.Message = &value
 	return b
 }

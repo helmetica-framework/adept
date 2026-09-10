@@ -26,12 +26,12 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &apiv1.DefinitionApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("DefinitionSpec"):
 		return &apiv1.DefinitionSpecApplyConfiguration{}
-	case v1.SchemeGroupVersion.WithKind("MaintenanceDefinition"):
-		return &apiv1.MaintenanceDefinitionApplyConfiguration{}
-	case v1.SchemeGroupVersion.WithKind("MaintenanceDefinitionSpec"):
-		return &apiv1.MaintenanceDefinitionSpecApplyConfiguration{}
-	case v1.SchemeGroupVersion.WithKind("MaintenanceDefinitionStatus"):
-		return &apiv1.MaintenanceDefinitionStatusApplyConfiguration{}
+	case v1.SchemeGroupVersion.WithKind("Maintenance"):
+		return &apiv1.MaintenanceApplyConfiguration{}
+	case v1.SchemeGroupVersion.WithKind("MaintenanceSpec"):
+		return &apiv1.MaintenanceSpecApplyConfiguration{}
+	case v1.SchemeGroupVersion.WithKind("MaintenanceStatus"):
+		return &apiv1.MaintenanceStatusApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("MaintenanceWindow"):
 		return &apiv1.MaintenanceWindowApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("MaintenanceWindowSpec"):

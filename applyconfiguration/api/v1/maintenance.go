@@ -11,77 +11,77 @@ import (
 	metav1 "k8s.io/client-go/applyconfigurations/meta/v1"
 )
 
-// MaintenanceDefinitionApplyConfiguration represents a declarative configuration of the MaintenanceDefinition type for use
+// MaintenanceApplyConfiguration represents a declarative configuration of the Maintenance type for use
 // with apply.
 //
-// MaintenanceDefinition is one instance's maintenance schedule. It lives in
-// the instance namespace, names a MaintenanceWindow to run in and a Definition
-// to run, and produces the CronJob that fires it.
-type MaintenanceDefinitionApplyConfiguration struct {
+// Maintenance is one instance's maintenance schedule. It lives in the instance
+// namespace, names a MaintenanceWindow to run in and a Definition to run, and
+// produces the CronJob that fires it.
+type MaintenanceApplyConfiguration struct {
 	metav1.TypeMetaApplyConfiguration    `json:",inline"`
 	*metav1.ObjectMetaApplyConfiguration `json:"metadata,omitempty"`
-	Spec                                 *MaintenanceDefinitionSpecApplyConfiguration   `json:"spec,omitempty"`
-	Status                               *MaintenanceDefinitionStatusApplyConfiguration `json:"status,omitempty"`
+	Spec                                 *MaintenanceSpecApplyConfiguration   `json:"spec,omitempty"`
+	Status                               *MaintenanceStatusApplyConfiguration `json:"status,omitempty"`
 }
 
-// MaintenanceDefinition constructs a declarative configuration of the MaintenanceDefinition type for use with
+// Maintenance constructs a declarative configuration of the Maintenance type for use with
 // apply.
-func MaintenanceDefinition(name, namespace string) *MaintenanceDefinitionApplyConfiguration {
-	b := &MaintenanceDefinitionApplyConfiguration{}
+func Maintenance(name, namespace string) *MaintenanceApplyConfiguration {
+	b := &MaintenanceApplyConfiguration{}
 	b.WithName(name)
 	b.WithNamespace(namespace)
-	b.WithKind("MaintenanceDefinition")
+	b.WithKind("Maintenance")
 	b.WithAPIVersion("rituals.helmetica.io/v1")
 	return b
 }
 
-// ExtractMaintenanceDefinitionFrom extracts the applied configuration owned by fieldManager from
-// maintenanceDefinition for the specified subresource. Pass an empty string for subresource to extract
+// ExtractMaintenanceFrom extracts the applied configuration owned by fieldManager from
+// maintenance for the specified subresource. Pass an empty string for subresource to extract
 // the main resource. Common subresources include "status", "scale", etc.
-// maintenanceDefinition must be a unmodified MaintenanceDefinition API object that was retrieved from the Kubernetes API.
-// ExtractMaintenanceDefinitionFrom provides a way to perform a extract/modify-in-place/apply workflow.
+// maintenance must be a unmodified Maintenance API object that was retrieved from the Kubernetes API.
+// ExtractMaintenanceFrom provides a way to perform a extract/modify-in-place/apply workflow.
 // Note that an extracted apply configuration will contain fewer fields than what the fieldManager previously
 // applied if another fieldManager has updated or force applied any of the previously applied fields.
-func ExtractMaintenanceDefinitionFrom(maintenanceDefinition *apiv1.MaintenanceDefinition, fieldManager string, subresource string) (*MaintenanceDefinitionApplyConfiguration, error) {
-	b := &MaintenanceDefinitionApplyConfiguration{}
-	err := managedfields.ExtractInto(maintenanceDefinition, internal.Parser().Type("com.github.helmetica-framework.adept.api.v1.MaintenanceDefinition"), fieldManager, b, subresource)
+func ExtractMaintenanceFrom(maintenance *apiv1.Maintenance, fieldManager string, subresource string) (*MaintenanceApplyConfiguration, error) {
+	b := &MaintenanceApplyConfiguration{}
+	err := managedfields.ExtractInto(maintenance, internal.Parser().Type("com.github.helmetica-framework.adept.api.v1.Maintenance"), fieldManager, b, subresource)
 	if err != nil {
 		return nil, err
 	}
-	b.WithName(maintenanceDefinition.Name)
-	b.WithNamespace(maintenanceDefinition.Namespace)
+	b.WithName(maintenance.Name)
+	b.WithNamespace(maintenance.Namespace)
 
-	b.WithKind("MaintenanceDefinition")
+	b.WithKind("Maintenance")
 	b.WithAPIVersion("rituals.helmetica.io/v1")
 	return b, nil
 }
 
-// ExtractMaintenanceDefinition extracts the applied configuration owned by fieldManager from
-// maintenanceDefinition. If no managedFields are found in maintenanceDefinition for fieldManager, a
-// MaintenanceDefinitionApplyConfiguration is returned with only the Name, Namespace (if applicable),
+// ExtractMaintenance extracts the applied configuration owned by fieldManager from
+// maintenance. If no managedFields are found in maintenance for fieldManager, a
+// MaintenanceApplyConfiguration is returned with only the Name, Namespace (if applicable),
 // APIVersion and Kind populated. It is possible that no managed fields were found for because other
 // field managers have taken ownership of all the fields previously owned by fieldManager, or because
 // the fieldManager never owned fields any fields.
-// maintenanceDefinition must be a unmodified MaintenanceDefinition API object that was retrieved from the Kubernetes API.
-// ExtractMaintenanceDefinition provides a way to perform a extract/modify-in-place/apply workflow.
+// maintenance must be a unmodified Maintenance API object that was retrieved from the Kubernetes API.
+// ExtractMaintenance provides a way to perform a extract/modify-in-place/apply workflow.
 // Note that an extracted apply configuration will contain fewer fields than what the fieldManager previously
 // applied if another fieldManager has updated or force applied any of the previously applied fields.
-func ExtractMaintenanceDefinition(maintenanceDefinition *apiv1.MaintenanceDefinition, fieldManager string) (*MaintenanceDefinitionApplyConfiguration, error) {
-	return ExtractMaintenanceDefinitionFrom(maintenanceDefinition, fieldManager, "")
+func ExtractMaintenance(maintenance *apiv1.Maintenance, fieldManager string) (*MaintenanceApplyConfiguration, error) {
+	return ExtractMaintenanceFrom(maintenance, fieldManager, "")
 }
 
-// ExtractMaintenanceDefinitionStatus extracts the applied configuration owned by fieldManager from
-// maintenanceDefinition for the status subresource.
-func ExtractMaintenanceDefinitionStatus(maintenanceDefinition *apiv1.MaintenanceDefinition, fieldManager string) (*MaintenanceDefinitionApplyConfiguration, error) {
-	return ExtractMaintenanceDefinitionFrom(maintenanceDefinition, fieldManager, "status")
+// ExtractMaintenanceStatus extracts the applied configuration owned by fieldManager from
+// maintenance for the status subresource.
+func ExtractMaintenanceStatus(maintenance *apiv1.Maintenance, fieldManager string) (*MaintenanceApplyConfiguration, error) {
+	return ExtractMaintenanceFrom(maintenance, fieldManager, "status")
 }
 
-func (b MaintenanceDefinitionApplyConfiguration) IsApplyConfiguration() {}
+func (b MaintenanceApplyConfiguration) IsApplyConfiguration() {}
 
 // WithKind sets the Kind field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the Kind field is set to the value of the last call.
-func (b *MaintenanceDefinitionApplyConfiguration) WithKind(value string) *MaintenanceDefinitionApplyConfiguration {
+func (b *MaintenanceApplyConfiguration) WithKind(value string) *MaintenanceApplyConfiguration {
 	b.TypeMetaApplyConfiguration.Kind = &value
 	return b
 }
@@ -89,7 +89,7 @@ func (b *MaintenanceDefinitionApplyConfiguration) WithKind(value string) *Mainte
 // WithAPIVersion sets the APIVersion field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the APIVersion field is set to the value of the last call.
-func (b *MaintenanceDefinitionApplyConfiguration) WithAPIVersion(value string) *MaintenanceDefinitionApplyConfiguration {
+func (b *MaintenanceApplyConfiguration) WithAPIVersion(value string) *MaintenanceApplyConfiguration {
 	b.TypeMetaApplyConfiguration.APIVersion = &value
 	return b
 }
@@ -97,7 +97,7 @@ func (b *MaintenanceDefinitionApplyConfiguration) WithAPIVersion(value string) *
 // WithName sets the Name field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the Name field is set to the value of the last call.
-func (b *MaintenanceDefinitionApplyConfiguration) WithName(value string) *MaintenanceDefinitionApplyConfiguration {
+func (b *MaintenanceApplyConfiguration) WithName(value string) *MaintenanceApplyConfiguration {
 	b.ensureObjectMetaApplyConfigurationExists()
 	b.ObjectMetaApplyConfiguration.Name = &value
 	return b
@@ -106,7 +106,7 @@ func (b *MaintenanceDefinitionApplyConfiguration) WithName(value string) *Mainte
 // WithGenerateName sets the GenerateName field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the GenerateName field is set to the value of the last call.
-func (b *MaintenanceDefinitionApplyConfiguration) WithGenerateName(value string) *MaintenanceDefinitionApplyConfiguration {
+func (b *MaintenanceApplyConfiguration) WithGenerateName(value string) *MaintenanceApplyConfiguration {
 	b.ensureObjectMetaApplyConfigurationExists()
 	b.ObjectMetaApplyConfiguration.GenerateName = &value
 	return b
@@ -115,7 +115,7 @@ func (b *MaintenanceDefinitionApplyConfiguration) WithGenerateName(value string)
 // WithNamespace sets the Namespace field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the Namespace field is set to the value of the last call.
-func (b *MaintenanceDefinitionApplyConfiguration) WithNamespace(value string) *MaintenanceDefinitionApplyConfiguration {
+func (b *MaintenanceApplyConfiguration) WithNamespace(value string) *MaintenanceApplyConfiguration {
 	b.ensureObjectMetaApplyConfigurationExists()
 	b.ObjectMetaApplyConfiguration.Namespace = &value
 	return b
@@ -124,7 +124,7 @@ func (b *MaintenanceDefinitionApplyConfiguration) WithNamespace(value string) *M
 // WithUID sets the UID field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the UID field is set to the value of the last call.
-func (b *MaintenanceDefinitionApplyConfiguration) WithUID(value types.UID) *MaintenanceDefinitionApplyConfiguration {
+func (b *MaintenanceApplyConfiguration) WithUID(value types.UID) *MaintenanceApplyConfiguration {
 	b.ensureObjectMetaApplyConfigurationExists()
 	b.ObjectMetaApplyConfiguration.UID = &value
 	return b
@@ -133,7 +133,7 @@ func (b *MaintenanceDefinitionApplyConfiguration) WithUID(value types.UID) *Main
 // WithResourceVersion sets the ResourceVersion field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the ResourceVersion field is set to the value of the last call.
-func (b *MaintenanceDefinitionApplyConfiguration) WithResourceVersion(value string) *MaintenanceDefinitionApplyConfiguration {
+func (b *MaintenanceApplyConfiguration) WithResourceVersion(value string) *MaintenanceApplyConfiguration {
 	b.ensureObjectMetaApplyConfigurationExists()
 	b.ObjectMetaApplyConfiguration.ResourceVersion = &value
 	return b
@@ -142,7 +142,7 @@ func (b *MaintenanceDefinitionApplyConfiguration) WithResourceVersion(value stri
 // WithGeneration sets the Generation field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the Generation field is set to the value of the last call.
-func (b *MaintenanceDefinitionApplyConfiguration) WithGeneration(value int64) *MaintenanceDefinitionApplyConfiguration {
+func (b *MaintenanceApplyConfiguration) WithGeneration(value int64) *MaintenanceApplyConfiguration {
 	b.ensureObjectMetaApplyConfigurationExists()
 	b.ObjectMetaApplyConfiguration.Generation = &value
 	return b
@@ -151,7 +151,7 @@ func (b *MaintenanceDefinitionApplyConfiguration) WithGeneration(value int64) *M
 // WithCreationTimestamp sets the CreationTimestamp field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the CreationTimestamp field is set to the value of the last call.
-func (b *MaintenanceDefinitionApplyConfiguration) WithCreationTimestamp(value apismetav1.Time) *MaintenanceDefinitionApplyConfiguration {
+func (b *MaintenanceApplyConfiguration) WithCreationTimestamp(value apismetav1.Time) *MaintenanceApplyConfiguration {
 	b.ensureObjectMetaApplyConfigurationExists()
 	b.ObjectMetaApplyConfiguration.CreationTimestamp = &value
 	return b
@@ -160,7 +160,7 @@ func (b *MaintenanceDefinitionApplyConfiguration) WithCreationTimestamp(value ap
 // WithDeletionTimestamp sets the DeletionTimestamp field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the DeletionTimestamp field is set to the value of the last call.
-func (b *MaintenanceDefinitionApplyConfiguration) WithDeletionTimestamp(value apismetav1.Time) *MaintenanceDefinitionApplyConfiguration {
+func (b *MaintenanceApplyConfiguration) WithDeletionTimestamp(value apismetav1.Time) *MaintenanceApplyConfiguration {
 	b.ensureObjectMetaApplyConfigurationExists()
 	b.ObjectMetaApplyConfiguration.DeletionTimestamp = &value
 	return b
@@ -169,7 +169,7 @@ func (b *MaintenanceDefinitionApplyConfiguration) WithDeletionTimestamp(value ap
 // WithDeletionGracePeriodSeconds sets the DeletionGracePeriodSeconds field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the DeletionGracePeriodSeconds field is set to the value of the last call.
-func (b *MaintenanceDefinitionApplyConfiguration) WithDeletionGracePeriodSeconds(value int64) *MaintenanceDefinitionApplyConfiguration {
+func (b *MaintenanceApplyConfiguration) WithDeletionGracePeriodSeconds(value int64) *MaintenanceApplyConfiguration {
 	b.ensureObjectMetaApplyConfigurationExists()
 	b.ObjectMetaApplyConfiguration.DeletionGracePeriodSeconds = &value
 	return b
@@ -179,7 +179,7 @@ func (b *MaintenanceDefinitionApplyConfiguration) WithDeletionGracePeriodSeconds
 // and returns the receiver, so that objects can be build by chaining "With" function invocations.
 // If called multiple times, the entries provided by each call will be put on the Labels field,
 // overwriting an existing map entries in Labels field with the same key.
-func (b *MaintenanceDefinitionApplyConfiguration) WithLabels(entries map[string]string) *MaintenanceDefinitionApplyConfiguration {
+func (b *MaintenanceApplyConfiguration) WithLabels(entries map[string]string) *MaintenanceApplyConfiguration {
 	b.ensureObjectMetaApplyConfigurationExists()
 	if b.ObjectMetaApplyConfiguration.Labels == nil && len(entries) > 0 {
 		b.ObjectMetaApplyConfiguration.Labels = make(map[string]string, len(entries))
@@ -194,7 +194,7 @@ func (b *MaintenanceDefinitionApplyConfiguration) WithLabels(entries map[string]
 // and returns the receiver, so that objects can be build by chaining "With" function invocations.
 // If called multiple times, the entries provided by each call will be put on the Annotations field,
 // overwriting an existing map entries in Annotations field with the same key.
-func (b *MaintenanceDefinitionApplyConfiguration) WithAnnotations(entries map[string]string) *MaintenanceDefinitionApplyConfiguration {
+func (b *MaintenanceApplyConfiguration) WithAnnotations(entries map[string]string) *MaintenanceApplyConfiguration {
 	b.ensureObjectMetaApplyConfigurationExists()
 	if b.ObjectMetaApplyConfiguration.Annotations == nil && len(entries) > 0 {
 		b.ObjectMetaApplyConfiguration.Annotations = make(map[string]string, len(entries))
@@ -208,7 +208,7 @@ func (b *MaintenanceDefinitionApplyConfiguration) WithAnnotations(entries map[st
 // WithOwnerReferences adds the given value to the OwnerReferences field in the declarative configuration
 // and returns the receiver, so that objects can be build by chaining "With" function invocations.
 // If called multiple times, values provided by each call will be appended to the OwnerReferences field.
-func (b *MaintenanceDefinitionApplyConfiguration) WithOwnerReferences(values ...*metav1.OwnerReferenceApplyConfiguration) *MaintenanceDefinitionApplyConfiguration {
+func (b *MaintenanceApplyConfiguration) WithOwnerReferences(values ...*metav1.OwnerReferenceApplyConfiguration) *MaintenanceApplyConfiguration {
 	b.ensureObjectMetaApplyConfigurationExists()
 	for i := range values {
 		if values[i] == nil {
@@ -222,7 +222,7 @@ func (b *MaintenanceDefinitionApplyConfiguration) WithOwnerReferences(values ...
 // WithFinalizers adds the given value to the Finalizers field in the declarative configuration
 // and returns the receiver, so that objects can be build by chaining "With" function invocations.
 // If called multiple times, values provided by each call will be appended to the Finalizers field.
-func (b *MaintenanceDefinitionApplyConfiguration) WithFinalizers(values ...string) *MaintenanceDefinitionApplyConfiguration {
+func (b *MaintenanceApplyConfiguration) WithFinalizers(values ...string) *MaintenanceApplyConfiguration {
 	b.ensureObjectMetaApplyConfigurationExists()
 	for i := range values {
 		b.ObjectMetaApplyConfiguration.Finalizers = append(b.ObjectMetaApplyConfiguration.Finalizers, values[i])
@@ -230,7 +230,7 @@ func (b *MaintenanceDefinitionApplyConfiguration) WithFinalizers(values ...strin
 	return b
 }
 
-func (b *MaintenanceDefinitionApplyConfiguration) ensureObjectMetaApplyConfigurationExists() {
+func (b *MaintenanceApplyConfiguration) ensureObjectMetaApplyConfigurationExists() {
 	if b.ObjectMetaApplyConfiguration == nil {
 		b.ObjectMetaApplyConfiguration = &metav1.ObjectMetaApplyConfiguration{}
 	}
@@ -239,7 +239,7 @@ func (b *MaintenanceDefinitionApplyConfiguration) ensureObjectMetaApplyConfigura
 // WithSpec sets the Spec field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the Spec field is set to the value of the last call.
-func (b *MaintenanceDefinitionApplyConfiguration) WithSpec(value *MaintenanceDefinitionSpecApplyConfiguration) *MaintenanceDefinitionApplyConfiguration {
+func (b *MaintenanceApplyConfiguration) WithSpec(value *MaintenanceSpecApplyConfiguration) *MaintenanceApplyConfiguration {
 	b.Spec = value
 	return b
 }
@@ -247,29 +247,29 @@ func (b *MaintenanceDefinitionApplyConfiguration) WithSpec(value *MaintenanceDef
 // WithStatus sets the Status field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the Status field is set to the value of the last call.
-func (b *MaintenanceDefinitionApplyConfiguration) WithStatus(value *MaintenanceDefinitionStatusApplyConfiguration) *MaintenanceDefinitionApplyConfiguration {
+func (b *MaintenanceApplyConfiguration) WithStatus(value *MaintenanceStatusApplyConfiguration) *MaintenanceApplyConfiguration {
 	b.Status = value
 	return b
 }
 
 // GetKind retrieves the value of the Kind field in the declarative configuration.
-func (b *MaintenanceDefinitionApplyConfiguration) GetKind() *string {
+func (b *MaintenanceApplyConfiguration) GetKind() *string {
 	return b.TypeMetaApplyConfiguration.Kind
 }
 
 // GetAPIVersion retrieves the value of the APIVersion field in the declarative configuration.
-func (b *MaintenanceDefinitionApplyConfiguration) GetAPIVersion() *string {
+func (b *MaintenanceApplyConfiguration) GetAPIVersion() *string {
 	return b.TypeMetaApplyConfiguration.APIVersion
 }
 
 // GetName retrieves the value of the Name field in the declarative configuration.
-func (b *MaintenanceDefinitionApplyConfiguration) GetName() *string {
+func (b *MaintenanceApplyConfiguration) GetName() *string {
 	b.ensureObjectMetaApplyConfigurationExists()
 	return b.ObjectMetaApplyConfiguration.Name
 }
 
 // GetNamespace retrieves the value of the Namespace field in the declarative configuration.
-func (b *MaintenanceDefinitionApplyConfiguration) GetNamespace() *string {
+func (b *MaintenanceApplyConfiguration) GetNamespace() *string {
 	b.ensureObjectMetaApplyConfigurationExists()
 	return b.ObjectMetaApplyConfiguration.Namespace
 }

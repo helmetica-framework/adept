@@ -26,12 +26,12 @@ func namedWindow(name string, isDefault bool) *ritualsv1.MaintenanceWindow {
 	return w
 }
 
-// maintenanceDefinition lives in "svc"; "svc/maintenance" is its spread
+// maintenance lives in "svc"; "svc/maintenance" is its spread
 // identity.
-func maintenanceDefinition(windowName string) *ritualsv1.MaintenanceDefinition {
-	return &ritualsv1.MaintenanceDefinition{
+func maintenance(windowName string) *ritualsv1.Maintenance {
+	return &ritualsv1.Maintenance{
 		ObjectMeta: metav1.ObjectMeta{Name: "maintenance", Namespace: "svc"},
-		Spec: ritualsv1.MaintenanceDefinitionSpec{
+		Spec: ritualsv1.MaintenanceSpec{
 			Window: windowName,
 			Ritual: "maintenance",
 		},
@@ -44,15 +44,15 @@ func maintenanceRitual(ns string) *ritualsv1.Definition {
 	return d
 }
 
-func maintenanceManager(objs ...client.Object) (*MaintenanceDefinitionManager, client.Client, *events.FakeRecorder) {
+func maintenanceManager(objs ...client.Object) (*MaintenanceManager, client.Client, *events.FakeRecorder) {
 	scheme := newTestScheme()
 	c := fake.NewClientBuilder().
 		WithScheme(scheme).
-		WithStatusSubresource(&ritualsv1.MaintenanceDefinition{}).
+		WithStatusSubresource(&ritualsv1.Maintenance{}).
 		WithObjects(objs...).
 		Build()
 	rec := events.NewFakeRecorder(8)
-	return &MaintenanceDefinitionManager{Client: c, Scheme: scheme, Recorder: rec, Log: logr.Discard()}, c, rec
+	return &MaintenanceManager{Client: c, Scheme: scheme, Recorder: rec, Log: logr.Discard()}, c, rec
 }
 
 // reconcileMaintenance runs one reconcile of "svc/maintenance".
@@ -73,9 +73,9 @@ func getCronJob(t *testing.T, c client.Client) *batchv1.CronJob {
 	return &list.Items[0]
 }
 
-func getMaintenanceDefinition(t *testing.T, c client.Client) *ritualsv1.MaintenanceDefinition {
+func getMaintenance(t *testing.T, c client.Client) *ritualsv1.Maintenance {
 	t.Helper()
-	got := &ritualsv1.MaintenanceDefinition{}
+	got := &ritualsv1.Maintenance{}
 	require.NoError(t, c.Get(context.Background(),
 		types.NamespacedName{Name: "maintenance", Namespace: "svc"}, got))
 	return got
@@ -83,7 +83,7 @@ func getMaintenanceDefinition(t *testing.T, c client.Client) *ritualsv1.Maintena
 
 func TestMaintenance_CreatesCronJobFromTheNamedWindow(t *testing.T) {
 	c, _, err := reconcileMaintenance(t,
-		namedWindow("sunday-night", false), maintenanceRitual("svc"), maintenanceDefinition("sunday-night"))
+		namedWindow("sunday-night", false), maintenanceRitual("svc"), maintenance("sunday-night"))
 	require.NoError(t, err)
 
 	cj := getCronJob(t, c)
@@ -95,9 +95,9 @@ func TestMaintenance_CreatesCronJobFromTheNamedWindow(t *testing.T) {
 
 	// Owner reference, not a finalizer: both objects share a namespace.
 	require.Len(t, cj.OwnerReferences, 1)
-	assert.Equal(t, "MaintenanceDefinition", cj.OwnerReferences[0].Kind)
+	assert.Equal(t, "Maintenance", cj.OwnerReferences[0].Kind)
 
-	md := getMaintenanceDefinition(t, c)
+	md := getMaintenance(t, c)
 	assert.Equal(t, cj.Spec.Schedule, md.Status.Schedule,
 		"the resolved schedule must be visible on the object an operator reads")
 	assert.Equal(t, cj.Name, md.Status.CronJobName)
@@ -108,7 +108,7 @@ func TestMaintenance_CreatesCronJobFromTheNamedWindow(t *testing.T) {
 func TestMaintenance_EmptyWindowUsesTheDefault(t *testing.T) {
 	c, _, err := reconcileMaintenance(t,
 		namedWindow("weekend", false), namedWindow("sunday-night", true),
-		maintenanceRitual("svc"), maintenanceDefinition(""))
+		maintenanceRitual("svc"), maintenance(""))
 	require.NoError(t, err)
 
 	assert.NotEmpty(t, getCronJob(t, c).Spec.Schedule)
@@ -119,7 +119,7 @@ func TestMaintenance_ScheduleMatchesTheSpreadIdentity(t *testing.T) {
 	// namespace alone, two definitions in one instance namespace resolve to
 	// the same minute and fire together.
 	c, _, err := reconcileMaintenance(t,
-		namedWindow("sunday-night", false), maintenanceRitual("svc"), maintenanceDefinition("sunday-night"))
+		namedWindow("sunday-night", false), maintenanceRitual("svc"), maintenance("sunday-night"))
 	require.NoError(t, err)
 
 	want, tz, err := schedule.CronSchedule(namedWindow("sunday-night", false).Spec, "svc/maintenance")
@@ -132,7 +132,7 @@ func TestMaintenance_ScheduleMatchesTheSpreadIdentity(t *testing.T) {
 
 func TestMaintenance_SuspendKeepsTheCronJob(t *testing.T) {
 	// A5: a vanished CronJob is indistinguishable from a broken controller.
-	md := maintenanceDefinition("sunday-night")
+	md := maintenance("sunday-night")
 	md.Spec.Suspend = true
 
 	c, _, err := reconcileMaintenance(t, namedWindow("sunday-night", false), maintenanceRitual("svc"), md)
@@ -154,17 +154,17 @@ func TestMaintenance_UnresolvableInputsAreRetryable(t *testing.T) {
 	}{
 		{
 			name: "named window does not exist",
-			objs: []client.Object{maintenanceRitual("svc"), maintenanceDefinition("sunday-night")},
+			objs: []client.Object{maintenanceRitual("svc"), maintenance("sunday-night")},
 			want: "sunday-night",
 		},
 		{
 			name: "no window is marked default",
-			objs: []client.Object{namedWindow("weekend", false), maintenanceRitual("svc"), maintenanceDefinition("")},
+			objs: []client.Object{namedWindow("weekend", false), maintenanceRitual("svc"), maintenance("")},
 			want: "default",
 		},
 		{
 			name: "ritual Definition does not exist",
-			objs: []client.Object{namedWindow("sunday-night", false), maintenanceDefinition("sunday-night")},
+			objs: []client.Object{namedWindow("sunday-night", false), maintenance("sunday-night")},
 			want: "maintenance",
 		},
 	}
@@ -173,7 +173,7 @@ func TestMaintenance_UnresolvableInputsAreRetryable(t *testing.T) {
 			c, rec, err := reconcileMaintenance(t, tt.objs...)
 			assert.Error(t, err, "must be retried, not swallowed")
 
-			md := getMaintenanceDefinition(t, c)
+			md := getMaintenance(t, c)
 			assert.Contains(t, md.Status.Message, tt.want)
 			assert.Empty(t, md.Status.Schedule, "no schedule may be claimed when none resolved")
 
@@ -188,7 +188,7 @@ func TestMaintenance_UnresolvableInputsAreRetryable(t *testing.T) {
 }
 
 func TestMaintenance_RecoversWhenTheWindowAppears(t *testing.T) {
-	m, c, _ := maintenanceManager(maintenanceRitual("svc"), maintenanceDefinition("sunday-night"))
+	m, c, _ := maintenanceManager(maintenanceRitual("svc"), maintenance("sunday-night"))
 	req := ctrl.Request{NamespacedName: types.NamespacedName{Name: "maintenance", Namespace: "svc"}}
 
 	_, err := m.Reconcile(context.Background(), req)
@@ -198,7 +198,7 @@ func TestMaintenance_RecoversWhenTheWindowAppears(t *testing.T) {
 
 	_, err = m.Reconcile(context.Background(), req)
 	require.NoError(t, err)
-	assert.Empty(t, getMaintenanceDefinition(t, c).Status.Message,
+	assert.Empty(t, getMaintenance(t, c).Status.Message,
 		"a stale message must clear once the window resolves")
 }
 
@@ -206,7 +206,7 @@ func TestMaintenance_RewritesTheScheduleWhenTheWindowChanges(t *testing.T) {
 	// Editing a window must move existing instances rather than orphan a
 	// CronJob on the old schedule.
 	m, c, _ := maintenanceManager(
-		namedWindow("sunday-night", false), maintenanceRitual("svc"), maintenanceDefinition("sunday-night"))
+		namedWindow("sunday-night", false), maintenanceRitual("svc"), maintenance("sunday-night"))
 	req := ctrl.Request{NamespacedName: types.NamespacedName{Name: "maintenance", Namespace: "svc"}}
 
 	_, err := m.Reconcile(context.Background(), req)
@@ -226,17 +226,17 @@ func TestMaintenance_RewritesTheScheduleWhenTheWindowChanges(t *testing.T) {
 
 func TestMaintenance_SettledDefinitionIsNotRewritten(t *testing.T) {
 	m, c, _ := maintenanceManager(
-		namedWindow("sunday-night", false), maintenanceRitual("svc"), maintenanceDefinition("sunday-night"))
+		namedWindow("sunday-night", false), maintenanceRitual("svc"), maintenance("sunday-night"))
 	req := ctrl.Request{NamespacedName: types.NamespacedName{Name: "maintenance", Namespace: "svc"}}
 
 	_, err := m.Reconcile(context.Background(), req)
 	require.NoError(t, err)
-	settled := getMaintenanceDefinition(t, c).ResourceVersion
+	settled := getMaintenance(t, c).ResourceVersion
 
 	_, err = m.Reconcile(context.Background(), req)
 	require.NoError(t, err)
 
-	assert.Equal(t, settled, getMaintenanceDefinition(t, c).ResourceVersion,
+	assert.Equal(t, settled, getMaintenance(t, c).ResourceVersion,
 		"an unchanged status must not be written again")
 }
 
@@ -245,11 +245,11 @@ func TestMaintenanceWindowMapFunc_MatchesByNameAndByDefault(t *testing.T) {
 	// with an empty window when that window is the default. Matching only by
 	// name leaves defaulted instances on the stale schedule with nothing to
 	// say so.
-	byName := maintenanceDefinition("sunday-night")
+	byName := maintenance("sunday-night")
 	byName.Name, byName.Namespace = "named", "a"
-	byDefault := maintenanceDefinition("")
+	byDefault := maintenance("")
 	byDefault.Name, byDefault.Namespace = "defaulted", "b"
-	unrelated := maintenanceDefinition("weekend")
+	unrelated := maintenance("weekend")
 	unrelated.Name, unrelated.Namespace = "other", "c"
 
 	m, _, _ := maintenanceManager(byName, byDefault, unrelated)

@@ -4,10 +4,10 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// MaintenanceDefinitionSpec schedules one instance's maintenance. Every field
-// is optional: an empty spec is a complete schedule, running the maintenance
+// MaintenanceSpec schedules one instance's maintenance. Every field is
+// optional: an empty spec is a complete schedule, running the maintenance
 // ritual in the operator's default window.
-type MaintenanceDefinitionSpec struct {
+type MaintenanceSpec struct {
 	// Window names the MaintenanceWindow this instance's maintenance starts
 	// in. Empty takes the window the operator marked as the default.
 	// +optional
@@ -25,8 +25,8 @@ type MaintenanceDefinitionSpec struct {
 	Suspend bool `json:"suspend,omitempty"`
 }
 
-// MaintenanceDefinitionStatus reports the schedule this instance resolved to.
-type MaintenanceDefinitionStatus struct {
+// MaintenanceStatus reports the schedule this instance resolved to.
+type MaintenanceStatus struct {
 	// Schedule is the cron expression this instance runs on, including its
 	// offset within the window.
 	// +optional
@@ -46,9 +46,9 @@ type MaintenanceDefinitionStatus struct {
 	Message string `json:"message,omitempty"`
 }
 
-// MaintenanceDefinition is one instance's maintenance schedule. It lives in
-// the instance namespace, names a MaintenanceWindow to run in and a Definition
-// to run, and produces the CronJob that fires it.
+// Maintenance is one instance's maintenance schedule. It lives in the instance
+// namespace, names a MaintenanceWindow to run in and a Definition to run, and
+// produces the CronJob that fires it.
 // +kubebuilder:object:root=true
 // +kubebuilder:ac:generate=true
 // +kubebuilder:subresource:status
@@ -56,23 +56,23 @@ type MaintenanceDefinitionStatus struct {
 // +kubebuilder:printcolumn:name="Ritual",type=string,JSONPath=`.spec.ritual`
 // +kubebuilder:printcolumn:name="Schedule",type=string,JSONPath=`.status.schedule`
 // +kubebuilder:printcolumn:name="Suspended",type=boolean,JSONPath=`.spec.suspend`
-type MaintenanceDefinition struct {
+type Maintenance struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   MaintenanceDefinitionSpec   `json:"spec,omitempty"`
-	Status MaintenanceDefinitionStatus `json:"status,omitempty"`
+	Spec   MaintenanceSpec   `json:"spec,omitempty"`
+	Status MaintenanceStatus `json:"status,omitempty"`
 }
 
-// MaintenanceDefinitionList contains a list of MaintenanceDefinition.
+// MaintenanceList contains a list of Maintenance.
 // +kubebuilder:object:root=true
-type MaintenanceDefinitionList struct {
+type MaintenanceList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
 
-	Items []MaintenanceDefinition `json:"items"`
+	Items []Maintenance `json:"items"`
 }
 
 func init() {
-	SchemeBuilder.Register(&MaintenanceDefinition{}, &MaintenanceDefinitionList{})
+	SchemeBuilder.Register(&Maintenance{}, &MaintenanceList{})
 }

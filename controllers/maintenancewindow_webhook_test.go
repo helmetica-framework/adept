@@ -75,7 +75,7 @@ func TestMaintenanceWindowValidator_AllowsUpdatingTheExistingDefault(t *testing.
 
 func TestMaintenanceWindowValidator_AllowsClearingTheDefault(t *testing.T) {
 	// Leaving no default at all is legitimate. Instances that needed one find
-	// out from their MaintenanceDefinition status, not from admission.
+	// out from their Maintenance status, not from admission.
 	existing := defaultWindow("sunday-night")
 	v := windowValidator(existing)
 
