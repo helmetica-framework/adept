@@ -195,6 +195,17 @@ func runController(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("unable to create Action controller: %w", err)
 	}
 
+	mdm := controllers.MaintenanceDefinitionManager{
+		Client:   mgr.GetClient(),
+		Scheme:   mgr.GetScheme(),
+		Recorder: mgr.GetEventRecorder("maintenancedefinition-controller"),
+		Log:      mgr.GetLogger().WithName("maintenancedefinition-controller"),
+	}
+
+	if err := mdm.SetupWithManager("maintenancedefinition", mgr); err != nil {
+		return fmt.Errorf("unable to create MaintenanceDefinition controller: %w", err)
+	}
+
 	if enableWebhooks {
 		if err := (&controllers.MaintenanceWindowValidator{
 			Client: mgr.GetClient(),

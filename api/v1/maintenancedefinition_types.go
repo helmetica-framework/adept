@@ -32,6 +32,11 @@ type MaintenanceDefinitionStatus struct {
 	// +optional
 	Schedule string `json:"schedule,omitempty"`
 
+	// ObservedGeneration is the spec generation the schedule was computed
+	// from.
+	// +optional
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+
 	// CronJobName is the CronJob executing the schedule, in this namespace.
 	// +optional
 	CronJobName string `json:"cronJobName,omitempty"`
@@ -45,6 +50,7 @@ type MaintenanceDefinitionStatus struct {
 // the instance namespace, names a MaintenanceWindow to run in and a Definition
 // to run, and produces the CronJob that fires it.
 // +kubebuilder:object:root=true
+// +kubebuilder:ac:generate=true
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Window",type=string,JSONPath=`.spec.window`
 // +kubebuilder:printcolumn:name="Ritual",type=string,JSONPath=`.spec.ritual`

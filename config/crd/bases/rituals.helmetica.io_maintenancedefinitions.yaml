@@ -85,6 +85,12 @@ spec:
               message:
                 description: Message explains why no schedule could be resolved.
                 type: string
+              observedGeneration:
+                description: |-
+                  ObservedGeneration is the spec generation the schedule was computed
+                  from.
+                format: int64
+                type: integer
               schedule:
                 description: |-
                   Schedule is the cron expression this instance runs on, including its
