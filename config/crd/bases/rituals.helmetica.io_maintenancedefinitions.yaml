@@ -1,0 +1,98 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.21.0
+  name: maintenancedefinitions.rituals.helmetica.io
+spec:
+  group: rituals.helmetica.io
+  names:
+    kind: MaintenanceDefinition
+    listKind: MaintenanceDefinitionList
+    plural: maintenancedefinitions
+    singular: maintenancedefinition
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.window
+      name: Window
+      type: string
+    - jsonPath: .spec.ritual
+      name: Ritual
+      type: string
+    - jsonPath: .status.schedule
+      name: Schedule
+      type: string
+    - jsonPath: .spec.suspend
+      name: Suspended
+      type: boolean
+    name: v1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          MaintenanceDefinition is one instance's maintenance schedule. It lives in
+          the instance namespace, names a MaintenanceWindow to run in and a Definition
+          to run, and produces the CronJob that fires it.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              MaintenanceDefinitionSpec schedules one instance's maintenance. Every field
+              is optional: an empty spec is a complete schedule, running the maintenance
+              ritual in the operator's default window.
+            properties:
+              ritual:
+                default: maintenance
+                description: Ritual names the Definition to run, in this namespace.
+                minLength: 1
+                type: string
+              suspend:
+                description: |-
+                  Suspend stops maintenance for this instance. Its schedule stays in
+                  place and stays visible.
+                type: boolean
+              window:
+                description: |-
+                  Window names the MaintenanceWindow this instance's maintenance starts
+                  in. Empty takes the window the operator marked as the default.
+                type: string
+            type: object
+          status:
+            description: MaintenanceDefinitionStatus reports the schedule this instance
+              resolved to.
+            properties:
+              cronJobName:
+                description: CronJobName is the CronJob executing the schedule, in
+                  this namespace.
+                type: string
+              message:
+                description: Message explains why no schedule could be resolved.
+                type: string
+              schedule:
+                description: |-
+                  Schedule is the cron expression this instance runs on, including its
+                  offset within the window.
+                type: string
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
