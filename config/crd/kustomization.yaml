@@ -2,7 +2,7 @@ resources:
 - bases/rituals.helmetica.io_definitions.yaml
 - bases/rituals.helmetica.io_actions.yaml
 - bases/rituals.helmetica.io_maintenancewindows.yaml
-- bases/rituals.helmetica.io_maintenancedefinitions.yaml
+- bases/rituals.helmetica.io_maintenances.yaml
 #+kubebuilder:scaffold:crdkustomizeresource
 
 configurations:

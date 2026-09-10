@@ -2,13 +2,13 @@
 
 package v1
 
-// MaintenanceDefinitionSpecApplyConfiguration represents a declarative configuration of the MaintenanceDefinitionSpec type for use
+// MaintenanceSpecApplyConfiguration represents a declarative configuration of the MaintenanceSpec type for use
 // with apply.
 //
-// MaintenanceDefinitionSpec schedules one instance's maintenance. Every field
-// is optional: an empty spec is a complete schedule, running the maintenance
+// MaintenanceSpec schedules one instance's maintenance. Every field is
+// optional: an empty spec is a complete schedule, running the maintenance
 // ritual in the operator's default window.
-type MaintenanceDefinitionSpecApplyConfiguration struct {
+type MaintenanceSpecApplyConfiguration struct {
 	// Window names the MaintenanceWindow this instance's maintenance starts
 	// in. Empty takes the window the operator marked as the default.
 	Window *string `json:"window,omitempty"`
@@ -19,16 +19,16 @@ type MaintenanceDefinitionSpecApplyConfiguration struct {
 	Suspend *bool `json:"suspend,omitempty"`
 }
 
-// MaintenanceDefinitionSpecApplyConfiguration constructs a declarative configuration of the MaintenanceDefinitionSpec type for use with
+// MaintenanceSpecApplyConfiguration constructs a declarative configuration of the MaintenanceSpec type for use with
 // apply.
-func MaintenanceDefinitionSpec() *MaintenanceDefinitionSpecApplyConfiguration {
-	return &MaintenanceDefinitionSpecApplyConfiguration{}
+func MaintenanceSpec() *MaintenanceSpecApplyConfiguration {
+	return &MaintenanceSpecApplyConfiguration{}
 }
 
 // WithWindow sets the Window field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the Window field is set to the value of the last call.
-func (b *MaintenanceDefinitionSpecApplyConfiguration) WithWindow(value string) *MaintenanceDefinitionSpecApplyConfiguration {
+func (b *MaintenanceSpecApplyConfiguration) WithWindow(value string) *MaintenanceSpecApplyConfiguration {
 	b.Window = &value
 	return b
 }
@@ -36,7 +36,7 @@ func (b *MaintenanceDefinitionSpecApplyConfiguration) WithWindow(value string) *
 // WithRitual sets the Ritual field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the Ritual field is set to the value of the last call.
-func (b *MaintenanceDefinitionSpecApplyConfiguration) WithRitual(value string) *MaintenanceDefinitionSpecApplyConfiguration {
+func (b *MaintenanceSpecApplyConfiguration) WithRitual(value string) *MaintenanceSpecApplyConfiguration {
 	b.Ritual = &value
 	return b
 }
@@ -44,7 +44,7 @@ func (b *MaintenanceDefinitionSpecApplyConfiguration) WithRitual(value string) *
 // WithSuspend sets the Suspend field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the Suspend field is set to the value of the last call.
-func (b *MaintenanceDefinitionSpecApplyConfiguration) WithSuspend(value bool) *MaintenanceDefinitionSpecApplyConfiguration {
+func (b *MaintenanceSpecApplyConfiguration) WithSuspend(value bool) *MaintenanceSpecApplyConfiguration {
 	b.Suspend = &value
 	return b
 }

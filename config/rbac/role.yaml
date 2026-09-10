@@ -55,7 +55,7 @@ rules:
   - rituals.helmetica.io
   resources:
   - actions/status
-  - maintenancedefinitions/status
+  - maintenances/status
   verbs:
   - get
   - patch
@@ -64,7 +64,7 @@ rules:
   - rituals.helmetica.io
   resources:
   - definitions
-  - maintenancedefinitions
+  - maintenances
   - maintenancewindows
   verbs:
   - get

@@ -25,41 +25,41 @@ import (
 
 // fieldOwner is the server-side-apply field manager of the CronJob and the
 // status adept writes.
-const fieldOwner = client.FieldOwner("adept:maintenancedefinition")
+const fieldOwner = client.FieldOwner("adept:maintenance")
 
-// +kubebuilder:rbac:groups=rituals.helmetica.io,resources=maintenancedefinitions,verbs=get;list;watch
-// +kubebuilder:rbac:groups=rituals.helmetica.io,resources=maintenancedefinitions/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=rituals.helmetica.io,resources=maintenances,verbs=get;list;watch
+// +kubebuilder:rbac:groups=rituals.helmetica.io,resources=maintenances/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=batch,resources=cronjobs,verbs=create;get;list;watch;update;patch;delete
 
-// MaintenanceDefinitionManager reconciles MaintenanceDefinition objects into
-// the CronJob that fires their ritual.
-type MaintenanceDefinitionManager struct {
+// MaintenanceManager reconciles Maintenance objects into the CronJob that
+// fires their ritual.
+type MaintenanceManager struct {
 	client.Client
 	Scheme   *runtime.Scheme
 	Recorder events.EventRecorder
 	Log      logr.Logger
 }
 
-// Reconcile drives a MaintenanceDefinition's status to reflect desiredState,
-// which is where the CronJob behind it is written. A resolution failure is
+// Reconcile drives a Maintenance's status to reflect desiredState, which is
+// where the CronJob behind it is written. A resolution failure is
 // reported in the status and returned, so the workqueue retries it: the chart
 // may render this object before the window exists.
-func (r *MaintenanceDefinitionManager) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	log := r.Log.WithValues("maintenancedefinition", req.NamespacedName)
+func (r *MaintenanceManager) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	log := r.Log.WithValues("maintenance", req.NamespacedName)
 
-	md := &ritualsv1.MaintenanceDefinition{}
+	md := &ritualsv1.Maintenance{}
 	err := r.Get(ctx, req.NamespacedName, md)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			// The CronJob is owned by the definition, so it goes with it.
-			log.V(1).Info("maintenance definition is gone, nothing to do")
+			// The CronJob is owned by the maintenance, so it goes with it.
+			log.V(1).Info("maintenance is gone, nothing to do")
 			return ctrl.Result{}, nil
 		}
 		return ctrl.Result{}, err
 	}
 
 	if !md.GetDeletionTimestamp().IsZero() {
-		log.V(1).Info("maintenance definition is being deleted, nothing to do")
+		log.V(1).Info("maintenance is being deleted, nothing to do")
 		return ctrl.Result{}, nil
 	}
 
@@ -78,15 +78,15 @@ func (r *MaintenanceDefinitionManager) Reconcile(ctx context.Context, req ctrl.R
 			log.Info("schedule changed", "from", md.Status.Schedule, "to", want.Schedule)
 		}
 
-		status := ritualsacv1.MaintenanceDefinition(md.Name, md.Namespace).
-			WithStatus(ritualsacv1.MaintenanceDefinitionStatus().
+		status := ritualsacv1.Maintenance(md.Name, md.Namespace).
+			WithStatus(ritualsacv1.MaintenanceStatus().
 				WithSchedule(want.Schedule).
 				WithCronJobName(want.CronJobName).
 				WithObservedGeneration(want.ObservedGeneration).
 				WithMessage(want.Message))
 
 		if err := r.Status().Apply(ctx, status, fieldOwner, client.ForceOwnership); err != nil {
-			return ctrl.Result{}, fmt.Errorf("applying maintenance definition status: %w", err)
+			return ctrl.Result{}, fmt.Errorf("applying maintenance status: %w", err)
 		}
 	}
 
@@ -98,19 +98,19 @@ func (r *MaintenanceDefinitionManager) Reconcile(ctx context.Context, req ctrl.R
 // returns the message to report along with the error. A ritual that has since
 // been deleted is such a failure, so its CronJob is left in place: the schedule
 // stays visible and keeps its job history until the ritual comes back.
-func (r *MaintenanceDefinitionManager) desiredState(ctx context.Context, md *ritualsv1.MaintenanceDefinition) (ritualsv1.MaintenanceDefinitionStatus, error) {
+func (r *MaintenanceManager) desiredState(ctx context.Context, md *ritualsv1.Maintenance) (ritualsv1.MaintenanceStatus, error) {
 	ad := &ritualsv1.Definition{}
 
 	err := r.Get(ctx, client.ObjectKey{Name: md.Spec.Ritual, Namespace: md.GetNamespace()}, ad)
 	if err != nil {
-		return ritualsv1.MaintenanceDefinitionStatus{}, fmt.Errorf("getting ritual %q: %w", md.Spec.Ritual, err)
+		return ritualsv1.MaintenanceStatus{}, fmt.Errorf("getting ritual %q: %w", md.Spec.Ritual, err)
 	}
 
 	wl := &ritualsv1.MaintenanceWindowList{}
 
 	err = r.List(ctx, wl)
 	if err != nil {
-		return ritualsv1.MaintenanceDefinitionStatus{}, fmt.Errorf("listing maintenance windows: %w", err)
+		return ritualsv1.MaintenanceStatus{}, fmt.Errorf("listing maintenance windows: %w", err)
 	}
 
 	var window ritualsv1.MaintenanceWindow
@@ -125,29 +125,29 @@ func (r *MaintenanceDefinitionManager) desiredState(ctx context.Context, md *rit
 
 	if window.Name == "" {
 		if md.Spec.Window == "" {
-			return ritualsv1.MaintenanceDefinitionStatus{}, fmt.Errorf("no maintenance window is marked as the default")
+			return ritualsv1.MaintenanceStatus{}, fmt.Errorf("no maintenance window is marked as the default")
 		}
-		return ritualsv1.MaintenanceDefinitionStatus{}, fmt.Errorf("no maintenance window %q", md.Spec.Window)
+		return ritualsv1.MaintenanceStatus{}, fmt.Errorf("no maintenance window %q", md.Spec.Window)
 	}
 
 	cron, tz, err := schedule.CronSchedule(window.Spec, fmt.Sprintf("%s/%s", md.GetNamespace(), md.GetName()))
 	if err != nil {
-		return ritualsv1.MaintenanceDefinitionStatus{}, fmt.Errorf("resolving cron schedule: %w", err)
+		return ritualsv1.MaintenanceStatus{}, fmt.Errorf("resolving cron schedule: %w", err)
 	}
 
 	err = r.applyCronJob(ctx, md, ad, cron, tz)
 	if err != nil {
-		return ritualsv1.MaintenanceDefinitionStatus{}, fmt.Errorf("applying cronjob: %w", err)
+		return ritualsv1.MaintenanceStatus{}, fmt.Errorf("applying cronjob: %w", err)
 	}
 
-	return ritualsv1.MaintenanceDefinitionStatus{Schedule: cron, CronJobName: md.GetName()}, nil
+	return ritualsv1.MaintenanceStatus{Schedule: cron, CronJobName: md.GetName()}, nil
 }
 
-// applyCronJob server-side-applies the CronJob the MaintenanceDefinition owns.
-// Only the fields adept decides are set here; the job template is the
-// Definition's, read into its apply configuration rather than converted from
-// the whole object, which would claim every zero value as deliberate.
-func (r *MaintenanceDefinitionManager) applyCronJob(ctx context.Context, md *ritualsv1.MaintenanceDefinition, def *ritualsv1.Definition, cronSchedule, timeZone string) error {
+// applyCronJob server-side-applies the CronJob the Maintenance owns. Only the
+// fields adept decides are set here; the job template is the Definition's, read
+// into its apply configuration rather than converted from the whole object,
+// which would claim every zero value as deliberate.
+func (r *MaintenanceManager) applyCronJob(ctx context.Context, md *ritualsv1.Maintenance, def *ritualsv1.Definition, cronSchedule, timeZone string) error {
 	owner, err := controllerRef(md, r.Scheme)
 	if err != nil {
 		return fmt.Errorf("building owner reference: %w", err)
@@ -191,18 +191,18 @@ func controllerRef(owner client.Object, scheme *runtime.Scheme) (*metav1ac.Owner
 		WithBlockOwnerDeletion(true), nil
 }
 
-// MaintenanceWindowMapFunc maps a window to the MaintenanceDefinitions using
-// it, by name and, when it is the default, by empty spec.window. Windows are
-// cluster-scoped, so this lists across namespaces.
-func (r *MaintenanceDefinitionManager) MaintenanceWindowMapFunc(ctx context.Context, o client.Object) []ctrl.Request {
+// MaintenanceWindowMapFunc maps a window to the Maintenances using it, by name
+// and, when it is the default, by empty spec.window. Windows are cluster-scoped,
+// so this lists across namespaces.
+func (r *MaintenanceManager) MaintenanceWindowMapFunc(ctx context.Context, o client.Object) []ctrl.Request {
 	window, ok := o.(*ritualsv1.MaintenanceWindow)
 	if !ok {
 		return nil
 	}
 
-	list := &ritualsv1.MaintenanceDefinitionList{}
+	list := &ritualsv1.MaintenanceList{}
 	if err := r.List(ctx, list); err != nil {
-		r.Log.Error(err, "listing maintenance definitions for a window", "window", window.GetName())
+		r.Log.Error(err, "listing maintenances for a window", "window", window.GetName())
 		return nil
 	}
 
@@ -217,12 +217,12 @@ func (r *MaintenanceDefinitionManager) MaintenanceWindowMapFunc(ctx context.Cont
 	return requests
 }
 
-// DefinitionMapFunc maps a Definition to the MaintenanceDefinitions in its
-// namespace naming it, so repairing a ritual heals its instances.
-func (r *MaintenanceDefinitionManager) DefinitionMapFunc(ctx context.Context, o client.Object) []ctrl.Request {
-	list := &ritualsv1.MaintenanceDefinitionList{}
+// DefinitionMapFunc maps a Definition to the Maintenances in its namespace
+// naming it, so repairing a ritual heals its instances.
+func (r *MaintenanceManager) DefinitionMapFunc(ctx context.Context, o client.Object) []ctrl.Request {
+	list := &ritualsv1.MaintenanceList{}
 	if err := r.List(ctx, list, client.InNamespace(o.GetNamespace())); err != nil {
-		r.Log.Error(err, "listing maintenance definitions for a ritual", "definition", client.ObjectKeyFromObject(o))
+		r.Log.Error(err, "listing maintenances for a ritual", "definition", client.ObjectKeyFromObject(o))
 		return nil
 	}
 
@@ -237,12 +237,12 @@ func (r *MaintenanceDefinitionManager) DefinitionMapFunc(ctx context.Context, o 
 	return requests
 }
 
-// SetupWithManager wires the controller: watch MaintenanceDefinition, the
-// CronJobs it owns, and the windows and Definitions they resolve through.
-func (r *MaintenanceDefinitionManager) SetupWithManager(name string, mgr ctrl.Manager) error {
+// SetupWithManager wires the controller: watch Maintenance, the CronJobs it
+// owns, and the windows and Definitions they resolve through.
+func (r *MaintenanceManager) SetupWithManager(name string, mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		Named(name).
-		For(&ritualsv1.MaintenanceDefinition{}).
+		For(&ritualsv1.Maintenance{}).
 		Owns(&batchv1.CronJob{}).
 		Watches(&ritualsv1.MaintenanceWindow{}, handler.EnqueueRequestsFromMapFunc(r.MaintenanceWindowMapFunc)).
 		Watches(&ritualsv1.Definition{}, handler.EnqueueRequestsFromMapFunc(r.DefinitionMapFunc)).

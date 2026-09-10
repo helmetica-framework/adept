@@ -45,7 +45,7 @@ var schemaYAML = typed.YAMLObject(`types:
     elementType:
       namedType: __untyped_deduced_
     elementRelationship: separable
-- name: com.github.helmetica-framework.adept.api.v1.MaintenanceDefinition
+- name: com.github.helmetica-framework.adept.api.v1.Maintenance
   scalar: untyped
   list:
     elementType:

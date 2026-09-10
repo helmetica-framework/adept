@@ -4,14 +4,14 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.21.0
-  name: maintenancedefinitions.rituals.helmetica.io
+  name: maintenances.rituals.helmetica.io
 spec:
   group: rituals.helmetica.io
   names:
-    kind: MaintenanceDefinition
-    listKind: MaintenanceDefinitionList
-    plural: maintenancedefinitions
-    singular: maintenancedefinition
+    kind: Maintenance
+    listKind: MaintenanceList
+    plural: maintenances
+    singular: maintenance
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
@@ -31,9 +31,9 @@ spec:
     schema:
       openAPIV3Schema:
         description: |-
-          MaintenanceDefinition is one instance's maintenance schedule. It lives in
-          the instance namespace, names a MaintenanceWindow to run in and a Definition
-          to run, and produces the CronJob that fires it.
+          Maintenance is one instance's maintenance schedule. It lives in the instance
+          namespace, names a MaintenanceWindow to run in and a Definition to run, and
+          produces the CronJob that fires it.
         properties:
           apiVersion:
             description: |-
@@ -54,8 +54,8 @@ spec:
             type: object
           spec:
             description: |-
-              MaintenanceDefinitionSpec schedules one instance's maintenance. Every field
-              is optional: an empty spec is a complete schedule, running the maintenance
+              MaintenanceSpec schedules one instance's maintenance. Every field is
+              optional: an empty spec is a complete schedule, running the maintenance
               ritual in the operator's default window.
             properties:
               ritual:
@@ -75,8 +75,8 @@ spec:
                 type: string
             type: object
           status:
-            description: MaintenanceDefinitionStatus reports the schedule this instance
-              resolved to.
+            description: MaintenanceStatus reports the schedule this instance resolved
+              to.
             properties:
               cronJobName:
                 description: CronJobName is the CronJob executing the schedule, in
