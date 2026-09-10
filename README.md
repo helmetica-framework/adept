@@ -61,7 +61,7 @@ It's not bound, so a job that starts 5 minutes before the window ends will still
 Against a kind (or any) cluster:
 
 ```bash
-kubectl apply -k config/crd
+kubectl apply -k config/crd --server-side
 just run          # in a second terminal
 kubectl apply -k config/samples
 kubectl get actions -w   # TYPE=restart, PHASE Pending -> Running -> Succeeded/Failed
@@ -75,7 +75,7 @@ Full deployment (CRDs, RBAC, manager, webhook) is packaged under
 `config/default`:
 
 ```bash
-kubectl apply -k config/default
+kubectl apply -k config/default --server-side
 ```
 
 That overlay needs [cert-manager](https://cert-manager.io) in the cluster. The

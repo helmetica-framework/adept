@@ -57,6 +57,12 @@ type MaintenanceWindowSpec struct {
 	// +kubebuilder:validation:MinLength=1
 	// +optional
 	TimeZone string `json:"timeZone,omitempty"`
+
+	// Default marks this window as the one instances take when they name no
+	// window of their own. At most one window may be the default; a second
+	// one claiming it is rejected.
+	// +optional
+	Default bool `json:"default,omitempty"`
 }
 
 // MaintenanceWindow is an operator-owned schedule that instances reference by
@@ -68,6 +74,7 @@ type MaintenanceWindowSpec struct {
 // +kubebuilder:printcolumn:name="Time",type=string,JSONPath=`.spec.time`
 // +kubebuilder:printcolumn:name="Duration",type=string,JSONPath=`.spec.duration`
 // +kubebuilder:printcolumn:name="Timezone",type=string,JSONPath=`.spec.timeZone`
+// +kubebuilder:printcolumn:name="Default",type=boolean,JSONPath=`.spec.default`
 type MaintenanceWindow struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

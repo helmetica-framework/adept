@@ -27,6 +27,9 @@ spec:
     - jsonPath: .spec.timeZone
       name: Timezone
       type: string
+    - jsonPath: .spec.default
+      name: Default
+      type: boolean
     name: v1
     schema:
       openAPIV3Schema:
@@ -82,6 +85,12 @@ spec:
                 maxItems: 7
                 minItems: 1
                 type: array
+              default:
+                description: |-
+                  Default marks this window as the one instances take when they name no
+                  window of their own. At most one window may be the default; a second
+                  one claiming it is rejected.
+                type: boolean
               duration:
                 description: |-
                   Duration is the time span during which maintenance may start, between 1h and
