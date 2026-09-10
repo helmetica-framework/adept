@@ -68,6 +68,9 @@ func (r *MaintenanceManager) Reconcile(ctx context.Context, req ctrl.Request) (c
 		want.Message = resolveErr.Error()
 	}
 	want.ObservedGeneration = md.Generation
+	// VersionManager owns this one. Carrying it through keeps the comparison
+	// below judging only the fields this controller writes.
+	want.VersionUpdatedFor = md.Status.VersionUpdatedFor
 
 	if md.Status != want {
 		// Only on a change, so a backing-off retry does not spam events.
@@ -106,31 +109,12 @@ func (r *MaintenanceManager) desiredState(ctx context.Context, md *ritualsv1.Mai
 		return ritualsv1.MaintenanceStatus{}, fmt.Errorf("getting ritual %q: %w", md.Spec.Ritual, err)
 	}
 
-	wl := &ritualsv1.MaintenanceWindowList{}
-
-	err = r.List(ctx, wl)
+	window, err := resolveWindow(ctx, r.Client, md)
 	if err != nil {
-		return ritualsv1.MaintenanceStatus{}, fmt.Errorf("listing maintenance windows: %w", err)
+		return ritualsv1.MaintenanceStatus{}, err
 	}
 
-	var window ritualsv1.MaintenanceWindow
-	for _, w := range wl.Items {
-		if md.Spec.Window == "" && w.Spec.Default {
-			window = w
-		}
-		if md.Spec.Window == w.GetName() {
-			window = w
-		}
-	}
-
-	if window.Name == "" {
-		if md.Spec.Window == "" {
-			return ritualsv1.MaintenanceStatus{}, fmt.Errorf("no maintenance window is marked as the default")
-		}
-		return ritualsv1.MaintenanceStatus{}, fmt.Errorf("no maintenance window %q", md.Spec.Window)
-	}
-
-	cron, tz, err := schedule.CronSchedule(window.Spec, fmt.Sprintf("%s/%s", md.GetNamespace(), md.GetName()))
+	cron, tz, err := schedule.CronSchedule(window.Spec, spreadIdentity(md))
 	if err != nil {
 		return ritualsv1.MaintenanceStatus{}, fmt.Errorf("resolving cron schedule: %w", err)
 	}
@@ -195,26 +179,7 @@ func controllerRef(owner client.Object, scheme *runtime.Scheme) (*metav1ac.Owner
 // and, when it is the default, by empty spec.window. Windows are cluster-scoped,
 // so this lists across namespaces.
 func (r *MaintenanceManager) MaintenanceWindowMapFunc(ctx context.Context, o client.Object) []ctrl.Request {
-	window, ok := o.(*ritualsv1.MaintenanceWindow)
-	if !ok {
-		return nil
-	}
-
-	list := &ritualsv1.MaintenanceList{}
-	if err := r.List(ctx, list); err != nil {
-		r.Log.Error(err, "listing maintenances for a window", "window", window.GetName())
-		return nil
-	}
-
-	var requests []ctrl.Request
-	for i := range list.Items {
-		md := &list.Items[i]
-		if md.Spec.Window == window.GetName() || (md.Spec.Window == "" && window.Spec.Default) {
-			requests = append(requests, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(md)})
-		}
-	}
-
-	return requests
+	return maintenanceForWindow(ctx, r.Client, r.Log, o)
 }
 
 // DefinitionMapFunc maps a Definition to the Maintenances in its namespace
@@ -247,4 +212,65 @@ func (r *MaintenanceManager) SetupWithManager(name string, mgr ctrl.Manager) err
 		Watches(&ritualsv1.MaintenanceWindow{}, handler.EnqueueRequestsFromMapFunc(r.MaintenanceWindowMapFunc)).
 		Watches(&ritualsv1.Definition{}, handler.EnqueueRequestsFromMapFunc(r.DefinitionMapFunc)).
 		Complete(r)
+}
+
+// resolveWindow returns the window a maintenance runs in: the one it names, or
+// the one marked as the default when it names none.
+func resolveWindow(ctx context.Context, c client.Client, md *ritualsv1.Maintenance) (ritualsv1.MaintenanceWindow, error) {
+	wl := &ritualsv1.MaintenanceWindowList{}
+	if err := c.List(ctx, wl); err != nil {
+		return ritualsv1.MaintenanceWindow{}, fmt.Errorf("listing maintenance windows: %w", err)
+	}
+
+	var window ritualsv1.MaintenanceWindow
+	for _, w := range wl.Items {
+		if md.Spec.Window == "" && w.Spec.Default {
+			window = w
+		}
+		if md.Spec.Window == w.GetName() {
+			window = w
+		}
+	}
+
+	if window.Name == "" {
+		if md.Spec.Window == "" {
+			return ritualsv1.MaintenanceWindow{}, fmt.Errorf("no maintenance window is marked as the default")
+		}
+		return ritualsv1.MaintenanceWindow{}, fmt.Errorf("no maintenance window %q", md.Spec.Window)
+	}
+
+	return window, nil
+}
+
+// spreadIdentity is what the schedule package spreads an instance by. The
+// CronJob's schedule and anything timed against it must pass the same one, or
+// they land in different minutes of the window.
+func spreadIdentity(md *ritualsv1.Maintenance) string {
+	return fmt.Sprintf("%s/%s", md.GetNamespace(), md.GetName())
+}
+
+// maintenanceForWindow maps a window to the Maintenances using it, by name and,
+// when it is the default, by empty spec.window. Windows are cluster-scoped, so
+// this lists across namespaces.
+func maintenanceForWindow(ctx context.Context, c client.Client, log logr.Logger, o client.Object) []ctrl.Request {
+	window, ok := o.(*ritualsv1.MaintenanceWindow)
+	if !ok {
+		return nil
+	}
+
+	list := &ritualsv1.MaintenanceList{}
+	if err := c.List(ctx, list); err != nil {
+		log.Error(err, "listing maintenances for a window", "window", window.GetName())
+		return nil
+	}
+
+	var requests []ctrl.Request
+	for i := range list.Items {
+		md := &list.Items[i]
+		if md.Spec.Window == window.GetName() || (md.Spec.Window == "" && window.Spec.Default) {
+			requests = append(requests, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(md)})
+		}
+	}
+
+	return requests
 }

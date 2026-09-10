@@ -2,6 +2,10 @@
 
 package v1
 
+import (
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+)
+
 // MaintenanceStatusApplyConfiguration represents a declarative configuration of the MaintenanceStatus type for use
 // with apply.
 //
@@ -15,6 +19,9 @@ type MaintenanceStatusApplyConfiguration struct {
 	ObservedGeneration *int64 `json:"observedGeneration,omitempty"`
 	// CronJobName is the CronJob executing the schedule, in this namespace.
 	CronJobName *string `json:"cronJobName,omitempty"`
+	// VersionUpdatedFor is the maintenance this instance's version was last
+	// moved for. It stays empty while the instance pins its own version.
+	VersionUpdatedFor *metav1.Time `json:"versionUpdatedFor,omitempty"`
 	// Message explains why no schedule could be resolved.
 	Message *string `json:"message,omitempty"`
 }
@@ -46,6 +53,14 @@ func (b *MaintenanceStatusApplyConfiguration) WithObservedGeneration(value int64
 // If called multiple times, the CronJobName field is set to the value of the last call.
 func (b *MaintenanceStatusApplyConfiguration) WithCronJobName(value string) *MaintenanceStatusApplyConfiguration {
 	b.CronJobName = &value
+	return b
+}
+
+// WithVersionUpdatedFor sets the VersionUpdatedFor field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the VersionUpdatedFor field is set to the value of the last call.
+func (b *MaintenanceStatusApplyConfiguration) WithVersionUpdatedFor(value metav1.Time) *MaintenanceStatusApplyConfiguration {
+	b.VersionUpdatedFor = &value
 	return b
 }
 

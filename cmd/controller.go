@@ -206,6 +206,17 @@ func runController(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("unable to create Maintenance controller: %w", err)
 	}
 
+	vm := controllers.VersionManager{
+		Client:   mgr.GetClient(),
+		Scheme:   mgr.GetScheme(),
+		Recorder: mgr.GetEventRecorder("maintenance-version-controller"),
+		Log:      mgr.GetLogger().WithName("maintenance-version-controller"),
+	}
+
+	if err := vm.SetupWithManager("maintenance-version", mgr); err != nil {
+		return fmt.Errorf("unable to create Version controller: %w", err)
+	}
+
 	if enableWebhooks {
 		if err := (&controllers.MaintenanceWindowValidator{
 			Client: mgr.GetClient(),

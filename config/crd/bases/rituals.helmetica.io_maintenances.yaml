@@ -96,6 +96,12 @@ spec:
                   Schedule is the cron expression this instance runs on, including its
                   offset within the window.
                 type: string
+              versionUpdatedFor:
+                description: |-
+                  VersionUpdatedFor is the maintenance this instance's version was last
+                  moved for. It stays empty while the instance pins its own version.
+                format: date-time
+                type: string
             type: object
         type: object
     served: true
