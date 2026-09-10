@@ -196,7 +196,9 @@ func runController(cmd *cobra.Command, _ []string) error {
 	}
 
 	if enableWebhooks {
-		if err := (&controllers.MaintenanceWindowValidator{}).SetupWithManager(mgr); err != nil {
+		if err := (&controllers.MaintenanceWindowValidator{
+			Client: mgr.GetClient(),
+		}).SetupWithManager(mgr); err != nil {
 			return fmt.Errorf("unable to create MaintenanceWindow webhook: %w", err)
 		}
 	}
