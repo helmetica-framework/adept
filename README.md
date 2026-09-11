@@ -30,7 +30,8 @@ the Action was created:
 | **Reagent** | A service chart wrapping an upstream (prima materia) chart; ships the Definitions for its service instance. |
 | **Definition** | The ritual's job template (`rituals.helmetica.io/v1`, namespaced, no status). Scaffolded and assayed by the transmuter, shipped by ferment. |
 | **Action** | A request to run a ritual: names a Definition via `spec.type`. The adept creates one Job per Action and mirrors its outcome in `status.phase` (`Pending` → `Running` → `Succeeded`/`Failed`). Terminal phases are final; no re-runs. Failures to resolve the instance namespace or the Definition are reported in `status.message`. |
-| **MaintenanceWindow** | A named span in which maintenance may start (`rituals.helmetica.io/v1`, cluster-scoped, no status). Operators own them; instances reference one by name instead of carrying their own schedule, which is what lets maintenance be batched. |
+| **MaintenanceWindow** | A named span in which maintenance may start (`rituals.helmetica.io/v1`, cluster-scoped, no status). Operators own them; instances reference one by name instead of carrying their own schedule, which is what lets maintenance be batched. One window may set `spec.default`, and instances naming no window take it. A validating webhook rejects a second window claiming it. |
+| **Maintenance** | One instance's maintenance schedule (`rituals.helmetica.io/v1`, namespaced). Names the window to start in and the ritual to run, and produces the CronJob that fires it. A reagent renders one per instance; an empty spec is a complete schedule. |
 
 ## Maintenance windows
 
@@ -56,6 +57,50 @@ schedule.
 The duration is not the time span when maintenance jobs may start.
 It's not bound, so a job that starts 5 minutes before the window ends will still continue.
 
+One window may set `spec.default`. Instances that name no window take it, so an
+operator can move the whole fleet by editing one object. The validating webhook
+rejects a second window claiming the default, since two of them would make the
+choice arbitrary.
+
+## Maintenance per instance
+
+A `Maintenance` is one instance's half of the arrangement. It lives in the
+instance namespace, and a reagent chart renders one per instance:
+
+```yaml
+apiVersion: rituals.helmetica.io/v1
+kind: Maintenance
+metadata:
+  name: my-service
+spec:
+  window: sunday-night   # empty takes the default window
+  ritual: maintenance    # the Definition to run, in this namespace
+  suspend: false         # stops maintenance without losing the schedule
+```
+
+Every field is optional, so `spec: {}` is a complete schedule: the default
+window, and the `maintenance` ritual the reagent ships.
+
+The adept turns it into a CronJob in the same namespace, owned by the
+`Maintenance`, and reports what the instance settled on:
+
+```bash
+kubectl get maintenances
+NAME         WINDOW         RITUAL        SCHEDULE            SUSPENDED
+my-service   sunday-night   maintenance   27 3 * * 1,2,3,4,5   false
+```
+
+`status.schedule` is where to look for when an instance actually runs. Instances
+sharing a window are spread across it by a hash of the `Maintenance`'s
+`namespace/name`, so they do not all start at once, and the offset stays put
+across chart upgrades. The offset can push a start past midnight, which is why
+the days above are shifted one on from the window's. When nothing resolves, the
+reason is in `status.message` and the adept retries with backoff, since a chart
+may render the `Maintenance` before the window or the ritual exists.
+
+`spec.suspend` sets the CronJob's own `suspend` rather than deleting it, so a
+suspended instance still shows up in `kubectl get cronjobs`.
+
 ## Quickstart
 
 Against a kind (or any) cluster:
@@ -68,8 +113,13 @@ kubectl get actions -w   # TYPE=restart, PHASE Pending -> Running -> Succeeded/F
 ```
 
 The samples create a `restart` Definition (kubectl rollout restart of a
-deployment), a `restart-now` Action that executes it, and a `sunday-night`
-MaintenanceWindow.
+deployment), a `restart-now` Action that executes it, a `sunday-night`
+MaintenanceWindow, a `maintenance` Definition, and a `my-service` Maintenance
+that schedules it:
+
+```bash
+kubectl get maintenances,cronjobs
+```
 
 Full deployment (CRDs, RBAC, manager, webhook) is packaged under
 `config/default`:
