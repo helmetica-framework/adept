@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	apiextv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	k8syaml "k8s.io/apimachinery/pkg/util/yaml"
 
 	ritualsv1 "github.com/helmetica-framework/adept/api/v1"
@@ -63,6 +65,64 @@ func TestSampleMaintenanceWindowRendersASchedule(t *testing.T) {
 	// Five space-separated cron fields: minute, hour, day-of-month, month,
 	// day-of-week.
 	assert.Len(t, strings.Fields(cron), 5, "got %q", cron)
+}
+
+func TestSampleMaintenanceIsValid(t *testing.T) {
+	md := readSample[ritualsv1.Maintenance](t, "v1_maintenance.yaml")
+
+	assert.Equal(t, "Maintenance", md.Kind)
+	assert.Equal(t, ritualsv1.GroupVersion.String(), md.APIVersion)
+	assert.NotEmpty(t, md.Name)
+	assert.Empty(t, md.Spec.Ritual,
+		"left unset so the sample shows an empty spec being a complete schedule")
+}
+
+func TestSampleMaintenanceNamesAWindowThatExists(t *testing.T) {
+	// Naming a window nothing defines is the one way this sample can be applied
+	// and still resolve to nothing.
+	md := readSample[ritualsv1.Maintenance](t, "v1_maintenance.yaml")
+	w := readSample[ritualsv1.MaintenanceWindow](t, "v1_maintenancewindow.yaml")
+
+	assert.Equal(t, w.Name, md.Spec.Window)
+}
+
+func TestSampleMaintenanceResolvesToAShippedRitual(t *testing.T) {
+	// The sample leaves spec.ritual empty, so what runs is the CRD's default.
+	// Read it from the generated CRD rather than repeating it here: change the
+	// default without shipping a Definition of that name and applying the
+	// samples leaves the Maintenance reporting a missing ritual.
+	ritual := maintenanceRitualDefault(t)
+
+	var names []string
+	entries, err := filepath.Glob(filepath.Join(samplesDir, "v1_definition*.yaml"))
+	require.NoError(t, err)
+	for _, entry := range entries {
+		names = append(names, readSample[ritualsv1.Definition](t, filepath.Base(entry)).Name)
+	}
+
+	assert.Contains(t, names, ritual, "no sample Definition is named %q", ritual)
+}
+
+// maintenanceRitualDefault is the default the generated CRD applies to
+// spec.ritual.
+func maintenanceRitualDefault(t *testing.T) string {
+	t.Helper()
+
+	raw, err := os.ReadFile("config/crd/bases/rituals.helmetica.io_maintenances.yaml")
+	require.NoError(t, err)
+
+	var crd apiextv1.CustomResourceDefinition
+	require.NoError(t, k8syaml.NewYAMLOrJSONDecoder(bytes.NewReader(raw), 4096).Decode(&crd))
+	require.NotEmpty(t, crd.Spec.Versions)
+
+	spec := crd.Spec.Versions[0].Schema.OpenAPIV3Schema.Properties["spec"]
+	ritual, ok := spec.Properties["ritual"]
+	require.True(t, ok, "the Maintenance CRD has no spec.ritual")
+	require.NotNil(t, ritual.Default, "spec.ritual has no default")
+
+	var out string
+	require.NoError(t, json.Unmarshal(ritual.Default.Raw, &out))
+	return out
 }
 
 func TestSampleDefinitionAndActionStillParse(t *testing.T) {

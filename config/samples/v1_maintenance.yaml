@@ -1,0 +1,12 @@
+# One instance's maintenance schedule, in the instance namespace.
+#
+# spec.ritual is left out: it defaults to "maintenance", the ritual a reagent
+# ships. spec.window could be left out too if a MaintenanceWindow in the cluster
+# were marked spec.default, but the sample names one so it works whatever the
+# cluster already has.
+apiVersion: rituals.helmetica.io/v1
+kind: Maintenance
+metadata:
+  name: my-service
+spec:
+  window: sunday-night
