@@ -145,8 +145,13 @@ func TestMaintenance_SuspendKeepsTheCronJob(t *testing.T) {
 
 func TestMaintenance_UnresolvableInputsAreRetryable(t *testing.T) {
 	// A chart may render the definition before the operator creates the window,
-	// and a typo must recover without touching the instance. None of these is
+	// and a typo must recover without touching the instance. Neither of these is
 	// terminal.
+	//
+	// Both rows are about the window, which is also what guards the resolution
+	// order: the ritual is optional, so the window has to be looked at first for
+	// these to fail at all. A missing ritual used to be a third row and is now
+	// its own set of tests below.
 	tests := []struct {
 		name string
 		objs []client.Object
@@ -161,11 +166,6 @@ func TestMaintenance_UnresolvableInputsAreRetryable(t *testing.T) {
 			name: "no window is marked default",
 			objs: []client.Object{namedWindow("weekend", false), maintenanceRitual("svc"), maintenance("")},
 			want: "default",
-		},
-		{
-			name: "ritual Definition does not exist",
-			objs: []client.Object{namedWindow("sunday-night", false), maintenance("sunday-night")},
-			want: "maintenance",
 		},
 	}
 	for _, tt := range tests {
@@ -238,6 +238,112 @@ func TestMaintenance_SettledDefinitionIsNotRewritten(t *testing.T) {
 
 	assert.Equal(t, settled, getMaintenance(t, c).ResourceVersion,
 		"an unchanged status must not be written again")
+}
+
+func TestMaintenance_MissingRitualStillPublishesTheSchedule(t *testing.T) {
+	// The version bump runs off the window whether or not a ritual exists, so a
+	// missing one must not cost the operator sight of when their instance moves.
+	c, _, err := reconcileMaintenance(t, namedWindow("sunday-night", false), maintenance("sunday-night"))
+	require.NoError(t, err, "a missing ritual is a supported setup, not a failure")
+
+	want, _, err := schedule.CronSchedule(namedWindow("sunday-night", false).Spec, "svc/maintenance")
+	require.NoError(t, err)
+
+	md := getMaintenance(t, c)
+	assert.Equal(t, want, md.Status.Schedule)
+	assert.Empty(t, md.Status.CronJobName)
+	assert.Contains(t, md.Status.Message, "maintenance",
+		"the ritual that is not there must be named, or a typo is invisible")
+}
+
+func TestMaintenance_MissingRitualCreatesNoCronJob(t *testing.T) {
+	c, _, err := reconcileMaintenance(t, namedWindow("sunday-night", false), maintenance("sunday-night"))
+	require.NoError(t, err)
+
+	var list batchv1.CronJobList
+	require.NoError(t, c.List(context.Background(), &list, client.InNamespace("svc")))
+	assert.Empty(t, list.Items)
+}
+
+func TestMaintenance_MissingRitualEmitsNoEvent(t *testing.T) {
+	// A reagent with no maintenance ritual is a supported setup. Warning on it
+	// every time the status moves makes the event stream useless.
+	_, rec, err := reconcileMaintenance(t, namedWindow("sunday-night", false), maintenance("sunday-night"))
+	require.NoError(t, err)
+
+	select {
+	case ev := <-rec.Events:
+		t.Fatalf("expected no event, got %q", ev)
+	default:
+	}
+}
+
+func TestMaintenance_MissingRitualDoesNotRequeue(t *testing.T) {
+	// Nothing to back off for: DefinitionMapFunc wakes this object when the
+	// ritual arrives.
+	m, _, _ := maintenanceManager(namedWindow("sunday-night", false), maintenance("sunday-night"))
+
+	res, err := m.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: "maintenance", Namespace: "svc"}})
+	require.NoError(t, err)
+
+	assert.Equal(t, ctrl.Result{}, res)
+}
+
+func TestMaintenance_RitualArrivingCreatesTheCronJob(t *testing.T) {
+	m, c, _ := maintenanceManager(namedWindow("sunday-night", false), maintenance("sunday-night"))
+	req := ctrl.Request{NamespacedName: types.NamespacedName{Name: "maintenance", Namespace: "svc"}}
+
+	_, err := m.Reconcile(context.Background(), req)
+	require.NoError(t, err)
+
+	require.NoError(t, c.Create(context.Background(), maintenanceRitual("svc")))
+
+	_, err = m.Reconcile(context.Background(), req)
+	require.NoError(t, err)
+
+	cj := getCronJob(t, c)
+	md := getMaintenance(t, c)
+	assert.Equal(t, cj.Name, md.Status.CronJobName)
+	assert.Empty(t, md.Status.Message, "the stale message must clear once the ritual arrives")
+}
+
+func TestMaintenance_RitualGoingAwayDeletesTheCronJob(t *testing.T) {
+	// A chart upgrade that drops the ritual must not leave a CronJob firing a
+	// template no Definition declares.
+	m, c, _ := maintenanceManager(
+		namedWindow("sunday-night", false), maintenanceRitual("svc"), maintenance("sunday-night"))
+	req := ctrl.Request{NamespacedName: types.NamespacedName{Name: "maintenance", Namespace: "svc"}}
+
+	_, err := m.Reconcile(context.Background(), req)
+	require.NoError(t, err)
+	require.NotEmpty(t, getCronJob(t, c).Spec.Schedule)
+
+	require.NoError(t, c.Delete(context.Background(), maintenanceRitual("svc")))
+
+	_, err = m.Reconcile(context.Background(), req)
+	require.NoError(t, err)
+
+	var list batchv1.CronJobList
+	require.NoError(t, c.List(context.Background(), &list, client.InNamespace("svc")))
+	assert.Empty(t, list.Items)
+	assert.Empty(t, getMaintenance(t, c).Status.CronJobName)
+}
+
+func TestMaintenance_ACronJobItDoesNotOwnIsLeftAlone(t *testing.T) {
+	// The CronJob carries the Maintenance's own name, so a user's CronJob can
+	// collide with it. Only the one adept created may be deleted.
+	theirs := &batchv1.CronJob{
+		ObjectMeta: metav1.ObjectMeta{Name: "maintenance", Namespace: "svc"},
+		Spec:       batchv1.CronJobSpec{Schedule: "0 0 * * *"},
+	}
+
+	c, _, err := reconcileMaintenance(t,
+		namedWindow("sunday-night", false), maintenance("sunday-night"), theirs)
+	require.NoError(t, err)
+
+	assert.Equal(t, "0 0 * * *", getCronJob(t, c).Spec.Schedule,
+		"someone else's CronJob is not adept's to delete")
 }
 
 func TestMaintenanceWindowMapFunc_MatchesByNameAndByDefault(t *testing.T) {

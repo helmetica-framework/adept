@@ -9,6 +9,7 @@ import (
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	batchv1ac "k8s.io/client-go/applyconfigurations/batch/v1"
 	metav1ac "k8s.io/client-go/applyconfigurations/meta/v1"
@@ -74,7 +75,7 @@ func (r *MaintenanceManager) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	if md.Status != want {
 		// Only on a change, so a backing-off retry does not spam events.
-		if want.Message != "" && want.Message != md.Status.Message {
+		if resolveErr != nil && want.Message != md.Status.Message {
 			r.Recorder.Eventf(md, nil, corev1.EventTypeWarning, "ScheduleResolveFailed", "Schedule", "%s", want.Message)
 		}
 		if want.Schedule != md.Status.Schedule {
@@ -96,19 +97,16 @@ func (r *MaintenanceManager) Reconcile(ctx context.Context, req ctrl.Request) (c
 	return ctrl.Result{}, resolveErr
 }
 
-// desiredState resolves the window and the ritual, applies the CronJob and
-// reports what the instance ended up on. A failure to resolve any of them
-// returns the message to report along with the error. A ritual that has since
-// been deleted is such a failure, so its CronJob is left in place: the schedule
-// stays visible and keeps its job history until the ritual comes back.
+// desiredState resolves the window, then the ritual, applies the CronJob and
+// reports what the instance ended up on. The window is required: without one
+// there is no schedule, and the version bump has nothing to key off either, so
+// failing to resolve it returns the message to report along with the error.
+//
+// The ritual is not required. A reagent may ship no maintenance Definition and
+// still want its version moved on the window's schedule, so a missing one
+// publishes the schedule, removes the CronJob and reports the reason without an
+// error.
 func (r *MaintenanceManager) desiredState(ctx context.Context, md *ritualsv1.Maintenance) (ritualsv1.MaintenanceStatus, error) {
-	ad := &ritualsv1.Definition{}
-
-	err := r.Get(ctx, client.ObjectKey{Name: md.Spec.Ritual, Namespace: md.GetNamespace()}, ad)
-	if err != nil {
-		return ritualsv1.MaintenanceStatus{}, fmt.Errorf("getting ritual %q: %w", md.Spec.Ritual, err)
-	}
-
 	window, err := resolveWindow(ctx, r.Client, md)
 	if err != nil {
 		return ritualsv1.MaintenanceStatus{}, err
@@ -117,6 +115,23 @@ func (r *MaintenanceManager) desiredState(ctx context.Context, md *ritualsv1.Mai
 	cron, tz, err := schedule.CronSchedule(window.Spec, spreadIdentity(md))
 	if err != nil {
 		return ritualsv1.MaintenanceStatus{}, fmt.Errorf("resolving cron schedule: %w", err)
+	}
+
+	ad := &ritualsv1.Definition{}
+
+	err = r.Get(ctx, client.ObjectKey{Name: md.Spec.Ritual, Namespace: md.GetNamespace()}, ad)
+	if err != nil && !apierrors.IsNotFound(err) {
+		return ritualsv1.MaintenanceStatus{}, fmt.Errorf("getting ritual %q: %w", md.Spec.Ritual, err)
+	}
+
+	if err != nil && apierrors.IsNotFound(err) {
+		if err := r.deleteCronJob(ctx, md); err != nil {
+			return ritualsv1.MaintenanceStatus{}, err
+		}
+		return ritualsv1.MaintenanceStatus{
+			Schedule: cron,
+			Message:  fmt.Sprintf("no Definition %q in this namespace; version bumping only", md.Spec.Ritual),
+		}, nil
 	}
 
 	err = r.applyCronJob(ctx, md, ad, cron, tz)
@@ -155,6 +170,30 @@ func (r *MaintenanceManager) applyCronJob(ctx context.Context, md *ritualsv1.Mai
 			WithJobTemplate(template))
 
 	return r.Apply(ctx, cronJob, fieldOwner, client.ForceOwnership)
+}
+
+func (r *MaintenanceManager) deleteCronJob(ctx context.Context, md *ritualsv1.Maintenance) error {
+	cj := &batchv1.CronJob{}
+
+	err := r.Get(ctx, client.ObjectKey{Name: md.GetName(), Namespace: md.GetNamespace()}, cj)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+		return fmt.Errorf("fetching job for deletion: %w", err)
+	}
+
+	// we only delete things we control
+	if !metav1.IsControlledBy(cj, md) {
+		return nil
+	}
+
+	err = r.Delete(ctx, cj)
+	if err != nil && !apierrors.IsNotFound(err) {
+		return fmt.Errorf("deleting cronjob: %w", err)
+	}
+
+	return nil
 }
 
 // controllerRef builds the owner reference an apply configuration needs.
