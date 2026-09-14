@@ -9,3 +9,4 @@ resources:
 - metrics_reader_role.yaml
 - crd_admin_role.yaml
 - chrysopoeia_claims_view_role_binding.yaml
+- chrysopoeia_claims_edit_role_binding.yaml

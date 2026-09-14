@@ -163,7 +163,9 @@ func (r *ActionManager) createJob(ctx context.Context, act *ritualsv1.Action, ns
 			return fmt.Errorf("setting owner reference: %w", err)
 		}
 	} else {
-		// TODO: we'll need some rbac for the helm-install case...
+		// Cross-namespace, so no owner reference is possible and the job runs
+		// under the instance-admin account chrysopoeia puts in the instance
+		// namespace. A plain helm install has no such account.
 		job.Spec.Template.Spec.ServiceAccountName = serviceAccount
 	}
 

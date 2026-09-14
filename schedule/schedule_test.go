@@ -2,6 +2,8 @@ package schedule_test
 
 import (
 	"fmt"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -242,5 +244,372 @@ func TestOffset_StableAcrossProcesses(t *testing.T) {
 	}
 	for id, w := range want {
 		assert.Equal(t, w, schedule.Offset(spec, id), "offset(%q) moved", id)
+	}
+}
+
+func zurich(t *testing.T) *time.Location {
+	t.Helper()
+	loc, err := time.LoadLocation("Europe/Zurich")
+	require.NoError(t, err)
+	return loc
+}
+
+func assertSameInstant(t *testing.T, want, got time.Time) {
+	t.Helper()
+	assert.True(t, want.Equal(got),
+		"want %s, got %s", want.Format(time.RFC3339), got.Format(time.RFC3339))
+}
+
+// db-prod's offset in a 6h window is 1h19m, so a 22:00 window starts this
+// instance at 23:19 and a 23:00 one at 00:19 the next day. 2026-09-13 is a
+// Sunday.
+func TestNextRun(t *testing.T) {
+	loc := zurich(t)
+
+	tests := []struct {
+		name  string
+		days  []ritualsv1.Day
+		start string
+		now   time.Time
+		want  time.Time
+	}{
+		{
+			name:  "later the same day",
+			days:  []ritualsv1.Day{"sunday"},
+			start: "22:00",
+			now:   time.Date(2026, 9, 13, 12, 0, 0, 0, loc),
+			want:  time.Date(2026, 9, 13, 23, 19, 0, 0, loc),
+		},
+		{
+			name:  "standing on the start time takes the next one",
+			days:  []ritualsv1.Day{"sunday"},
+			start: "22:00",
+			// Inclusive here would requeue with no delay and spin.
+			now:  time.Date(2026, 9, 13, 23, 19, 0, 0, loc),
+			want: time.Date(2026, 9, 20, 23, 19, 0, 0, loc),
+		},
+		{
+			name:  "midweek waits for the next listed day",
+			days:  []ritualsv1.Day{"sunday"},
+			start: "22:00",
+			now:   time.Date(2026, 9, 16, 9, 0, 0, 0, loc),
+			want:  time.Date(2026, 9, 20, 23, 19, 0, 0, loc),
+		},
+		{
+			name:  "an offset past midnight lands on the following day",
+			days:  []ritualsv1.Day{"sunday"},
+			start: "23:00",
+			now:   time.Date(2026, 9, 13, 23, 30, 0, 0, loc),
+			want:  time.Date(2026, 9, 14, 0, 19, 0, 0, loc),
+		},
+		{
+			name:  "a multi-day window takes the nearest day",
+			days:  []ritualsv1.Day{"sunday", "monday", "tuesday", "wednesday", "thursday"},
+			start: "22:00",
+			now:   time.Date(2026, 9, 14, 12, 0, 0, 0, loc),
+			want:  time.Date(2026, 9, 14, 23, 19, 0, 0, loc),
+		},
+		{
+			name:  "now in another zone is still judged in the window's",
+			days:  []ritualsv1.Day{"sunday"},
+			start: "22:00",
+			// 21:00 UTC is 23:00 in Zurich, so the 23:19 start is still ahead.
+			now:  time.Date(2026, 9, 13, 21, 0, 0, 0, time.UTC),
+			want: time.Date(2026, 9, 13, 23, 19, 0, 0, loc),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			spec := window("Europe/Zurich", tt.days...)
+			spec.Time = tt.start
+
+			got, err := schedule.NextRun(spec, "db-prod", tt.now)
+			require.NoError(t, err)
+			assertSameInstant(t, tt.want, got)
+		})
+	}
+}
+
+func TestNextRun_AgreesWithTheCronExpression(t *testing.T) {
+	// The two must not drift: the CronJob fires on the expression while the
+	// caller wakes on this time, and a mismatch means maintenance runs at one
+	// moment and something acts on it at another.
+	loc := zurich(t)
+	now := time.Date(2026, 9, 16, 9, 0, 0, 0, loc)
+
+	daySets := [][]ritualsv1.Day{
+		{"sunday"},
+		{"saturday"},
+		{"sunday", "monday", "tuesday", "wednesday", "thursday"},
+	}
+	for _, days := range daySets {
+		for _, start := range []string{"22:00", "23:00", "00:30"} {
+			for _, id := range []string{"db-prod", "db-staging", "cache-eu"} {
+				spec := window("Europe/Zurich", days...)
+				spec.Time = start
+
+				cron, _, err := schedule.CronSchedule(spec, id)
+				require.NoError(t, err)
+				got, err := schedule.NextRun(spec, id, now)
+				require.NoError(t, err)
+
+				wantFields := strings.Split(cron, " ")
+				assert.Equal(t, wantFields[0], strconv.Itoa(got.Minute()), "minute of %q for %s", cron, id)
+				assert.Equal(t, wantFields[1], strconv.Itoa(got.Hour()), "hour of %q for %s", cron, id)
+				assert.Contains(t, strings.Split(wantFields[4], ","), strconv.Itoa(int(got.Weekday())),
+					"weekday of %q for %s", cron, id)
+				assert.True(t, got.After(now), "%s is not after %s", got, now)
+			}
+		}
+	}
+}
+
+func TestNextRun_EmptyTimeZoneIsUTC(t *testing.T) {
+	spec := window("", "sunday")
+	spec.Time = "22:00"
+
+	got, err := schedule.NextRun(spec, "db-prod", time.Date(2026, 9, 13, 12, 0, 0, 0, time.UTC))
+	require.NoError(t, err)
+	assertSameInstant(t, time.Date(2026, 9, 13, 23, 19, 0, 0, time.UTC), got)
+}
+
+func TestNextRun_RejectsMalformedSpecs(t *testing.T) {
+	spec := window("Europe/Zurizh", "sunday")
+
+	_, err := schedule.NextRun(spec, "db-prod", time.Now())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "Europe/Zurizh")
+}
+
+func TestNextBump(t *testing.T) {
+	loc := zurich(t)
+
+	tests := []struct {
+		name     string
+		identity string
+		now      time.Time
+		want     time.Time
+	}{
+		{
+			name:     "lands a lead ahead of the start",
+			identity: "db-prod", // 1h19m offset, so 23:19
+			now:      time.Date(2026, 9, 13, 12, 0, 0, 0, loc),
+			want:     time.Date(2026, 9, 13, 23, 4, 0, 0, loc),
+		},
+		{
+			name: "an offset shorter than the lead clamps to the opening",
+			// svc/instance-52 has a 3m offset, so a full lead would put the
+			// bump at 21:48, outside the window it belongs to.
+			identity: "svc/instance-52",
+			now:      time.Date(2026, 9, 13, 12, 0, 0, 0, loc),
+			want:     time.Date(2026, 9, 13, 22, 0, 0, 0, loc),
+		},
+		{
+			name:     "standing on the bump takes the next one",
+			identity: "db-prod",
+			now:      time.Date(2026, 9, 13, 23, 4, 0, 0, loc),
+			want:     time.Date(2026, 9, 20, 23, 4, 0, 0, loc),
+		},
+		{
+			name: "between the bump and the start takes the next one",
+			// A restart here has missed this window's bump. Waiting is the
+			// safe direction: acting now would be outside the lead the ritual
+			// counts on.
+			identity: "db-prod",
+			now:      time.Date(2026, 9, 13, 23, 10, 0, 0, loc),
+			want:     time.Date(2026, 9, 20, 23, 4, 0, 0, loc),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			spec := window("Europe/Zurich", "sunday")
+
+			got, err := schedule.NextBump(spec, tt.identity, tt.now)
+			require.NoError(t, err)
+			assertSameInstant(t, tt.want, got)
+		})
+	}
+}
+
+func TestNextBump_NeverAtOrAfterTheStart(t *testing.T) {
+	// The whole point is ordering: whatever the offset, the bump has to be
+	// strictly earlier than the maintenance it precedes, and no earlier than
+	// the window opening.
+	loc := zurich(t)
+	now := time.Date(2026, 9, 16, 9, 0, 0, 0, loc)
+	spec := window("Europe/Zurich", "sunday")
+
+	for i := range 200 {
+		id := fmt.Sprintf("svc/instance-%d", i)
+
+		run, err := schedule.NextRun(spec, id, now)
+		require.NoError(t, err)
+		bump, err := schedule.NextBump(spec, id, now)
+		require.NoError(t, err)
+
+		offset := schedule.Offset(spec, id)
+		if offset == 0 {
+			assertSameInstant(t, run, bump)
+			continue
+		}
+		assert.True(t, bump.Before(run), "%s: bump %s is not before run %s", id, bump, run)
+		assert.LessOrEqual(t, run.Sub(bump), schedule.BumpLead, "%s: lead is longer than BumpLead", id)
+		assert.LessOrEqual(t, run.Sub(bump), offset, "%s: bump precedes the window opening", id)
+	}
+}
+
+func TestNextBump_RejectsMalformedSpecs(t *testing.T) {
+	spec := window("Europe/Zurizh", "sunday")
+
+	_, err := schedule.NextBump(spec, "db-prod", time.Now())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "Europe/Zurizh")
+}
+
+func TestPrevRun(t *testing.T) {
+	loc := zurich(t)
+	spec := window("Europe/Zurich", "sunday") // db-prod starts 23:19
+
+	tests := []struct {
+		name string
+		now  time.Time
+		want time.Time
+	}{
+		{
+			name: "earlier the same day takes last week",
+			now:  time.Date(2026, 9, 13, 12, 0, 0, 0, loc),
+			want: time.Date(2026, 9, 6, 23, 19, 0, 0, loc),
+		},
+		{
+			name: "standing on the start counts as that start",
+			now:  time.Date(2026, 9, 13, 23, 19, 0, 0, loc),
+			want: time.Date(2026, 9, 13, 23, 19, 0, 0, loc),
+		},
+		{
+			name: "after the start takes it",
+			now:  time.Date(2026, 9, 14, 1, 0, 0, 0, loc),
+			want: time.Date(2026, 9, 13, 23, 19, 0, 0, loc),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := schedule.PrevRun(spec, "db-prod", tt.now)
+			require.NoError(t, err)
+			assertSameInstant(t, tt.want, got)
+		})
+	}
+}
+
+func TestPrevRun_IsTheOccurrenceBeforeNextRun(t *testing.T) {
+	loc := zurich(t)
+	spec := window("Europe/Zurich", "sunday", "wednesday")
+
+	for h := range 24 {
+		now := time.Date(2026, 9, 16, h, 30, 0, 0, loc)
+
+		prev, err := schedule.PrevRun(spec, "db-prod", now)
+		require.NoError(t, err)
+		next, err := schedule.NextRun(spec, "db-prod", now)
+		require.NoError(t, err)
+
+		assert.False(t, prev.After(now), "%s: prev %s is in the future", now, prev)
+		assert.True(t, next.After(now), "%s: next %s is not in the future", now, next)
+		// Nothing may sit between them: they are adjacent occurrences.
+		mid, err := schedule.NextRun(spec, "db-prod", prev)
+		require.NoError(t, err)
+		assertSameInstant(t, next, mid)
+	}
+}
+
+func TestBumpDue(t *testing.T) {
+	loc := zurich(t)
+	spec := window("Europe/Zurich", "sunday") // db-prod: bump 23:04, run 23:19
+
+	thisWeek := time.Date(2026, 9, 13, 23, 4, 0, 0, loc)
+	lastWeek := time.Date(2026, 9, 6, 23, 4, 0, 0, loc)
+
+	tests := []struct {
+		name           string
+		now            time.Time
+		wantOccurrence time.Time
+		wantOpen       bool
+	}{
+		{
+			name:           "at the lead",
+			now:            time.Date(2026, 9, 13, 23, 4, 0, 0, loc),
+			wantOccurrence: thisWeek,
+			wantOpen:       true,
+		},
+		{
+			name:           "inside the lead",
+			now:            time.Date(2026, 9, 13, 23, 10, 0, 0, loc),
+			wantOccurrence: thisWeek,
+			wantOpen:       true,
+		},
+		{
+			name: "after the maintenance started but still in the window",
+			// A restart that missed the lead catches up here rather than
+			// waiting a week.
+			now:            time.Date(2026, 9, 14, 1, 0, 0, 0, loc),
+			wantOccurrence: thisWeek,
+			wantOpen:       true,
+		},
+		{
+			name:           "the window has closed",
+			now:            time.Date(2026, 9, 14, 4, 0, 0, 0, loc),
+			wantOccurrence: thisWeek,
+			wantOpen:       false,
+		},
+		{
+			name:           "before this week's lead is still last week's occurrence",
+			now:            time.Date(2026, 9, 13, 23, 3, 0, 0, loc),
+			wantOccurrence: lastWeek,
+			wantOpen:       false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			occurrence, open, err := schedule.BumpDue(spec, "db-prod", tt.now)
+			require.NoError(t, err)
+			assertSameInstant(t, tt.wantOccurrence, occurrence)
+			assert.Equal(t, tt.wantOpen, open)
+		})
+	}
+}
+
+func TestBumpDue_AZeroOffsetInstanceIsStillDue(t *testing.T) {
+	// The hole a "is it the lead right now" check falls into: svc/instance-79
+	// has a zero offset, so its lead is zero-length and no instant lies inside
+	// it. Keyed on the occurrence instead, it is due like any other.
+	loc := zurich(t)
+	spec := window("Europe/Zurich", "sunday")
+	require.Zero(t, schedule.Offset(spec, "svc/instance-79"), "identity picked for its zero offset")
+
+	occurrence, open, err := schedule.BumpDue(spec, "svc/instance-79",
+		time.Date(2026, 9, 13, 22, 0, 0, 0, loc))
+	require.NoError(t, err)
+	assert.True(t, open)
+	assertSameInstant(t, time.Date(2026, 9, 13, 22, 0, 0, 0, loc), occurrence)
+}
+
+func TestBumpDue_OccurrenceIsStableAcrossTheWindow(t *testing.T) {
+	// Every reconcile inside one window must report the same occurrence, or a
+	// caller comparing it against what it recorded would act repeatedly.
+	loc := zurich(t)
+	spec := window("Europe/Zurich", "sunday")
+
+	want, _, err := schedule.BumpDue(spec, "db-prod", time.Date(2026, 9, 13, 23, 4, 0, 0, loc))
+	require.NoError(t, err)
+
+	for _, now := range []time.Time{
+		time.Date(2026, 9, 13, 23, 5, 0, 0, loc),
+		time.Date(2026, 9, 13, 23, 19, 0, 0, loc),
+		time.Date(2026, 9, 14, 2, 30, 0, 0, loc),
+		time.Date(2026, 9, 14, 3, 59, 0, 0, loc),
+	} {
+		got, open, err := schedule.BumpDue(spec, "db-prod", now)
+		require.NoError(t, err)
+		assert.True(t, open, "%s is inside the window", now)
+		assertSameInstant(t, want, got)
 	}
 }

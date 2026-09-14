@@ -19,16 +19,17 @@ binary:
 # Run tests
 test: manifests generate
     go test ./... -race -coverprofile cover.tmp.out
-    grep -v "zz_generated.deepcopy.go" cover.tmp.out > cover.out
+    grep -v -e "zz_generated.deepcopy.go" -e "/applyconfiguration/" cover.tmp.out > cover.out
 
 # Generate ClusterRole, CustomResourceDefinition and webhook objects
 manifests:
     {{ CONTROLLER_GEN }} rbac:roleName=manager-role crd:generateEmbeddedObjectMeta=true webhook paths="./..." output:crd:artifacts:config=config/crd/bases output:webhook:artifacts:config=config/webhook
 
-# Generate deepcopy functions and manifests
+# Generate deepcopy functions, apply configurations and manifests
 generate: manifests
     go generate ./...
     {{ CONTROLLER_GEN }} object paths="./..."
+    {{ CONTROLLER_GEN }} applyconfiguration paths="./api/..."
 
 # Generate documentation
 docs:

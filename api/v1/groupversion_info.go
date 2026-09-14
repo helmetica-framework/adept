@@ -1,5 +1,7 @@
 // Package v1 contains API Schema definitions for the rituals.helmetica.io v1 API group
 // +kubebuilder:object:generate=true
+// +kubebuilder:ac:generate=true
+// +kubebuilder:ac:output:package="../../applyconfiguration"
 // +groupName=rituals.helmetica.io
 package v1
 
@@ -17,4 +19,9 @@ var (
 
 	// AddToScheme adds the types in this group-version to the given scheme.
 	AddToScheme = SchemeBuilder.AddToScheme
+
+	// SchemeGroupVersion is an alias for GroupVersion. The generated apply
+	// configurations refer to it by this name, which is what client-gen
+	// scaffolding calls it.
+	SchemeGroupVersion = GroupVersion
 )

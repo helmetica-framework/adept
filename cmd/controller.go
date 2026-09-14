@@ -13,11 +13,15 @@ import (
 
 	"github.com/spf13/cobra"
 	"go.uber.org/multierr"
+	apiextv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/certwatcher"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
@@ -80,6 +84,7 @@ func newScheme() *runtime.Scheme {
 	scheme := runtime.NewScheme()
 	utilruntime.Must(ritualsv1.AddToScheme(scheme))
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
+	utilruntime.Must(apiextv1.AddToScheme(scheme))
 	//+kubebuilder:scaffold:scheme
 	return scheme
 }
@@ -176,6 +181,16 @@ func runController(cmd *cobra.Command, _ []string) error {
 		LeaderElection:         enableLeaderElection,
 		LeaderElectionID:       "adept.rituals.helmetica.io",
 
+		Cache: cache.Options{
+			ByObject: map[client.Object]cache.ByObject{
+				// Only the claim CRDs chrysopoeia generates. Without this the cache
+				// holds every CRD in the cluster to answer one lookup per bump.
+				&apiextv1.CustomResourceDefinition{}: {
+					Label: labels.SelectorFromSet(labels.Set{controllers.ManagedLabel: ""}),
+				},
+			},
+		},
+
 		LeaderElectionReleaseOnCancel: true,
 	})
 	if err != nil {
@@ -195,8 +210,32 @@ func runController(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("unable to create Action controller: %w", err)
 	}
 
+	mm := controllers.MaintenanceManager{
+		Client:   mgr.GetClient(),
+		Scheme:   mgr.GetScheme(),
+		Recorder: mgr.GetEventRecorder("maintenance-controller"),
+		Log:      mgr.GetLogger().WithName("maintenance-controller"),
+	}
+
+	if err := mm.SetupWithManager("maintenance", mgr); err != nil {
+		return fmt.Errorf("unable to create Maintenance controller: %w", err)
+	}
+
+	vm := controllers.VersionManager{
+		Client:   mgr.GetClient(),
+		Scheme:   mgr.GetScheme(),
+		Recorder: mgr.GetEventRecorder("maintenance-version-controller"),
+		Log:      mgr.GetLogger().WithName("maintenance-version-controller"),
+	}
+
+	if err := vm.SetupWithManager("maintenance-version", mgr); err != nil {
+		return fmt.Errorf("unable to create Version controller: %w", err)
+	}
+
 	if enableWebhooks {
-		if err := (&controllers.MaintenanceWindowValidator{}).SetupWithManager(mgr); err != nil {
+		if err := (&controllers.MaintenanceWindowValidator{
+			Client: mgr.GetClient(),
+		}).SetupWithManager(mgr); err != nil {
 			return fmt.Errorf("unable to create MaintenanceWindow webhook: %w", err)
 		}
 	}
