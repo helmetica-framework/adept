@@ -46,6 +46,13 @@ type MaintenanceStatus struct {
 	// +optional
 	VersionUpdatedFor *metav1.Time `json:"versionUpdatedFor,omitempty"`
 
+	// ObservedBumpRequest is the value of the
+	// rituals.helmetica.io/bump-now annotation this instance last acted on.
+	// Set the annotation to any new value to move the version straight away
+	// instead of waiting for the window.
+	// +optional
+	ObservedBumpRequest string `json:"observedBumpRequest,omitempty"`
+
 	// Message explains why no schedule could be resolved.
 	// +optional
 	Message string `json:"message,omitempty"`

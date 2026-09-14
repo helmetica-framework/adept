@@ -3,6 +3,7 @@ package controllers
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/go-logr/logr"
 	"github.com/stretchr/testify/assert"
@@ -11,6 +12,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/events"
+	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -344,6 +346,31 @@ func TestMaintenance_ACronJobItDoesNotOwnIsLeftAlone(t *testing.T) {
 
 	assert.Equal(t, "0 0 * * *", getCronJob(t, c).Spec.Schedule,
 		"someone else's CronJob is not adept's to delete")
+}
+
+func TestMaintenance_LeavesTheVersionControllersStatusAlone(t *testing.T) {
+	// Both controllers write this object's status under their own field
+	// manager. A field this one does not carry through reads as a difference on
+	// every reconcile, and the status gets reapplied forever.
+	md := maintenance("sunday-night")
+	md.Status.VersionUpdatedFor = ptr.To(metav1.NewTime(time.Now().Truncate(time.Second)))
+	md.Status.ObservedBumpRequest = "now"
+
+	m, c, _ := maintenanceManager(namedWindow("sunday-night", false), maintenanceRitual("svc"), md)
+	req := ctrl.Request{NamespacedName: types.NamespacedName{Name: "maintenance", Namespace: "svc"}}
+
+	_, err := m.Reconcile(context.Background(), req)
+	require.NoError(t, err)
+
+	settled := getMaintenance(t, c)
+	assert.Equal(t, "now", settled.Status.ObservedBumpRequest)
+	require.NotNil(t, settled.Status.VersionUpdatedFor)
+
+	_, err = m.Reconcile(context.Background(), req)
+	require.NoError(t, err)
+
+	assert.Equal(t, settled.ResourceVersion, getMaintenance(t, c).ResourceVersion,
+		"an unchanged status must not be written again")
 }
 
 func TestMaintenanceWindowMapFunc_MatchesByNameAndByDefault(t *testing.T) {

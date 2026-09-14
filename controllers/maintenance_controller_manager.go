@@ -69,9 +69,10 @@ func (r *MaintenanceManager) Reconcile(ctx context.Context, req ctrl.Request) (c
 		want.Message = resolveErr.Error()
 	}
 	want.ObservedGeneration = md.Generation
-	// VersionManager owns this one. Carrying it through keeps the comparison
+	// VersionManager owns these. Carrying them through keeps the comparison
 	// below judging only the fields this controller writes.
 	want.VersionUpdatedFor = md.Status.VersionUpdatedFor
+	want.ObservedBumpRequest = md.Status.ObservedBumpRequest
 
 	if md.Status != want {
 		// Only on a change, so a backing-off retry does not spam events.
