@@ -85,6 +85,13 @@ spec:
               message:
                 description: Message explains why no schedule could be resolved.
                 type: string
+              observedBumpRequest:
+                description: |-
+                  ObservedBumpRequest is the value of the
+                  rituals.helmetica.io/bump-now annotation this instance last acted on.
+                  Set the annotation to any new value to move the version straight away
+                  instead of waiting for the window.
+                type: string
               observedGeneration:
                 description: |-
                   ObservedGeneration is the spec generation the schedule was computed

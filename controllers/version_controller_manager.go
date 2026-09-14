@@ -47,6 +47,13 @@ const (
 	claimNameAnnotation       = "chrysopoeia.io/claim-name"
 )
 
+// bumpNowAnnotation asks for a version bump straight away instead of at the
+// next maintenance. Any value works: the controller acts when it differs from
+// status.observedBumpRequest, so re-applying the same value does nothing and a
+// stale annotation is inert. It is never removed by the controller, which would
+// fight the chart that rendered the object.
+const bumpNowAnnotation = "rituals.helmetica.io/bump-now"
+
 // ManagedLabel marks the CRDs chrysopoeia generates, with an empty value
 // (customresourcedefinitionsource_controller_manager.go:341). Exported because the
 // manager's cache is filtered by it too, and the two selectors must agree.
@@ -293,6 +300,16 @@ func (r *VersionManager) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		return ctrl.Result{}, err
 	}
 
+	// manual bump
+	if request, outstanding := bumpRequested(md); outstanding {
+		if _, err := r.bumpVersion(ctx, md, log); err != nil {
+			return ctrl.Result{}, err
+		}
+		if err := r.recordBumpRequest(ctx, md, request); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
+
 	now := r.now()
 	identity := spreadIdentity(md)
 
@@ -315,56 +332,92 @@ func (r *VersionManager) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	return ctrl.Result{RequeueAfter: time.Until(bump)}, nil
 }
 
-// bump moves the instance's claim onto the newest version its schema allows.
-// Every reason to do nothing returns without a watermark, because the watermark
-// says a version was written.
+// bump is the scheduled caller: it moves the version and watermarks the
+// maintenance it acted for. Nothing written means no watermark, because the
+// watermark says a version was written.
 func (r *VersionManager) bump(ctx context.Context, md *ritualsv1.Maintenance, occurrence time.Time, log logr.Logger) error {
+	bumped, err := r.bumpVersion(ctx, md, log.WithValues("maintenance", occurrence))
+	if err != nil || !bumped {
+		return err
+	}
+
+	return r.recordBump(ctx, md, occurrence)
+}
+
+// bumpRequested reports the bump-now annotation's value and whether acting on
+// it is still outstanding. A request already in status.observedBumpRequest has
+// been served: the annotation stays on the object, and re-applying the same
+// value must not move the version again.
+func bumpRequested(md *ritualsv1.Maintenance) (string, bool) {
+	req, ok := md.GetAnnotations()[bumpNowAnnotation]
+	if !ok {
+		return "", false
+	}
+
+	return req, req != md.Status.ObservedBumpRequest
+}
+
+// recordBumpRequest writes the manual watermark. It says the request was
+// served, not that a version was written, which is where it differs from
+// recordBump: a claim that is already newest still has to be recorded, or the
+// same annotation is re-checked on every reconcile for as long as it is there.
+func (r *VersionManager) recordBumpRequest(ctx context.Context, md *ritualsv1.Maintenance, request string) error {
+	status := ritualsacv1.Maintenance(md.Name, md.Namespace).
+		WithStatus(ritualsacv1.MaintenanceStatus().
+			WithObservedBumpRequest(request))
+
+	if err := r.Status().Apply(ctx, status, versionFieldOwner, client.ForceOwnership); err != nil {
+		return fmt.Errorf("recording the version update: %w", err)
+	}
+	return nil
+}
+
+// bumpVersion moves the instance's claim onto the newest version its schema
+// allows and reports whether it wrote one. Every reason to do nothing reports
+// false, because each caller watermarks on its own terms.
+func (r *VersionManager) bumpVersion(ctx context.Context, md *ritualsv1.Maintenance, log logr.Logger) (bool, error) {
 	ref, managed, err := r.claimRefFor(ctx, md.GetNamespace())
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	if !managed {
 		log.V(1).Info("not a chrysopoeia instance, no claim to bump")
-		return nil
+		return false, nil
 	}
 
 	claim, err := r.claimFor(ctx, ref)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	crd, err := r.claimCRDFor(ctx, ref)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	newest, err := newestVersion(crd, ref)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	needed, err := needsBump(claim, newest)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	if !needed {
 		log.V(1).Info("claim needs no bump", "claim", ref.Name, "newest", newest)
-		return nil
+		return false, nil
 	}
 
 	if err := r.bumpClaim(ctx, claim, newest); err != nil {
-		return err
+		return false, err
 	}
 
-	if err := r.recordBump(ctx, md, occurrence); err != nil {
-		return err
-	}
+	log.Info("moved the instance's version", "claim", ref.Name, "version", newest)
 
-	log.Info("moved the instance's version", "claim", ref.Name, "version", newest, "maintenance", occurrence)
-
-	return nil
+	return true, nil
 }
 
 // bumpedFor reports whether this maintenance has already been acted on. The

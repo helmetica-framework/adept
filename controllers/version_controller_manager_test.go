@@ -160,6 +160,20 @@ func bumpedMaintenance(occurrence time.Time) *ritualsv1.Maintenance {
 	return md
 }
 
+// requestedMaintenance carries an outstanding bump-now annotation.
+func requestedMaintenance(request string) *ritualsv1.Maintenance {
+	md := maintenance("sunday-night")
+	md.Annotations = map[string]string{bumpNowAnnotation: request}
+	return md
+}
+
+// shut is a moment no window is open at, which is where every manual bump test
+// runs: acting there is the whole point of the annotation.
+func shut(t *testing.T) time.Time {
+	t.Helper()
+	return at(t, 9, 16, 12, 0)
+}
+
 func getVersionMaintenance(t *testing.T, c client.Client) *ritualsv1.Maintenance {
 	t.Helper()
 	got := &ritualsv1.Maintenance{}
@@ -218,6 +232,112 @@ func TestVersion_ActsAgainForTheNextMaintenance(t *testing.T) {
 	got := getVersionMaintenance(t, c)
 	require.NotNil(t, got.Status.VersionUpdatedFor)
 	assert.True(t, got.Status.VersionUpdatedFor.Time.Equal(occurrence))
+}
+
+func TestVersion_ABumpRequestActsWithTheWindowShut(t *testing.T) {
+	// The whole point of the annotation: waiting for the window is exactly what
+	// the operator asking for it does not want to do.
+	m, c := managedVersionManager(namedWindow("sunday-night", false), requestedMaintenance("now"))
+	m.Now = func() time.Time { return shut(t) }
+
+	reconcileVersion(t, m)
+
+	assert.Equal(t, "2.1.0", claimVersion(t, c), "the newest the claim's CRD allows")
+}
+
+func TestVersion_RecordsTheBumpRequestItActedOn(t *testing.T) {
+	m, c := managedVersionManager(namedWindow("sunday-night", false), requestedMaintenance("now"))
+	m.Now = func() time.Time { return shut(t) }
+
+	reconcileVersion(t, m)
+
+	assert.Equal(t, "now", getVersionMaintenance(t, c).Status.ObservedBumpRequest)
+	assert.Nil(t, getVersionMaintenance(t, c).Status.VersionUpdatedFor,
+		"no maintenance was acted on, so the scheduled watermark stays empty")
+}
+
+func TestVersion_DoesNotRepeatASettledBumpRequest(t *testing.T) {
+	// The annotation is never removed by the controller, so the watermark is
+	// the only thing stopping every reconcile from bumping again.
+	md := requestedMaintenance("now")
+	md.Status.ObservedBumpRequest = "now"
+	m, c := managedVersionManager(namedWindow("sunday-night", false), md)
+	m.Now = func() time.Time { return shut(t) }
+
+	before := getVersionMaintenance(t, c).ResourceVersion
+	reconcileVersion(t, m)
+
+	assert.Equal(t, before, getVersionMaintenance(t, c).ResourceVersion)
+	assert.Empty(t, claimVersion(t, c), "a served request must not move the version again")
+}
+
+func TestVersion_ANewBumpRequestActsAgain(t *testing.T) {
+	md := requestedMaintenance("second")
+	md.Status.ObservedBumpRequest = "first"
+	m, c := managedVersionManager(namedWindow("sunday-night", false), md)
+	m.Now = func() time.Time { return shut(t) }
+
+	reconcileVersion(t, m)
+
+	assert.Equal(t, "2.1.0", claimVersion(t, c))
+	assert.Equal(t, "second", getVersionMaintenance(t, c).Status.ObservedBumpRequest)
+}
+
+func TestVersion_ARequestIsRecordedEvenWhenNothingNeededBumping(t *testing.T) {
+	// Where this watermark parts company with VersionUpdatedFor, which means a
+	// version was written. This one means the request was served. Without it an
+	// already-newest claim re-reads its namespace, claim and CRD on every
+	// reconcile for as long as the annotation is there.
+	m, c := versionManager(
+		svcNamespace(claimAnnotations()),
+		withStatusVersion(claim("tenant", "svc"), "2.1.0"),
+		databaseCRD("2.1.0", "2.0.0"),
+		namedWindow("sunday-night", false),
+		requestedMaintenance("now"))
+	m.Now = func() time.Time { return shut(t) }
+
+	reconcileVersion(t, m)
+
+	assert.Equal(t, "now", getVersionMaintenance(t, c).Status.ObservedBumpRequest)
+	assert.Equal(t, "2.1.0", claimVersion(t, c), "already newest, so nothing to write")
+}
+
+func TestVersion_AManualBumpLeavesTheScheduledWatermarkAlone(t *testing.T) {
+	// One watermark for both paths loops. The manual bump overwrites the
+	// scheduled one, the still-open window then looks unacted-on, the scheduled
+	// bump puts its own back, and the two overwrite each other until the window
+	// shuts.
+	inWindow := bumpMoment(t)
+	occurrence := dueAt(t, inWindow)
+	md := bumpedMaintenance(occurrence)
+	md.Annotations = map[string]string{bumpNowAnnotation: "now"}
+
+	m, c := managedVersionManager(namedWindow("sunday-night", false), md)
+	m.Now = func() time.Time { return inWindow }
+
+	reconcileVersion(t, m)
+
+	got := getVersionMaintenance(t, c)
+	require.NotNil(t, got.Status.VersionUpdatedFor)
+	assert.True(t, got.Status.VersionUpdatedFor.Time.Equal(occurrence),
+		"the scheduled watermark is not the manual path's to move")
+	assert.Equal(t, "now", got.Status.ObservedBumpRequest)
+
+	settled := got.ResourceVersion
+	reconcileVersion(t, m)
+
+	assert.Equal(t, settled, getVersionMaintenance(t, c).ResourceVersion,
+		"both paths are settled, so nothing may be written again")
+}
+
+func TestVersion_NoAnnotationMeansNoManualBump(t *testing.T) {
+	m, c := managedVersionManager(namedWindow("sunday-night", false), maintenance("sunday-night"))
+	m.Now = func() time.Time { return shut(t) }
+
+	reconcileVersion(t, m)
+
+	assert.Empty(t, claimVersion(t, c))
+	assert.Empty(t, getVersionMaintenance(t, c).Status.ObservedBumpRequest)
 }
 
 // svcNamespace is the instance namespace a Maintenance lives in. chrysopoeia

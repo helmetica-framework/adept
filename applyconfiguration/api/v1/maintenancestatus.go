@@ -22,6 +22,11 @@ type MaintenanceStatusApplyConfiguration struct {
 	// VersionUpdatedFor is the maintenance this instance's version was last
 	// moved for. It stays empty while the instance pins its own version.
 	VersionUpdatedFor *metav1.Time `json:"versionUpdatedFor,omitempty"`
+	// ObservedBumpRequest is the value of the
+	// rituals.helmetica.io/bump-now annotation this instance last acted on.
+	// Set the annotation to any new value to move the version straight away
+	// instead of waiting for the window.
+	ObservedBumpRequest *string `json:"observedBumpRequest,omitempty"`
 	// Message explains why no schedule could be resolved.
 	Message *string `json:"message,omitempty"`
 }
@@ -61,6 +66,14 @@ func (b *MaintenanceStatusApplyConfiguration) WithCronJobName(value string) *Mai
 // If called multiple times, the VersionUpdatedFor field is set to the value of the last call.
 func (b *MaintenanceStatusApplyConfiguration) WithVersionUpdatedFor(value metav1.Time) *MaintenanceStatusApplyConfiguration {
 	b.VersionUpdatedFor = &value
+	return b
+}
+
+// WithObservedBumpRequest sets the ObservedBumpRequest field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the ObservedBumpRequest field is set to the value of the last call.
+func (b *MaintenanceStatusApplyConfiguration) WithObservedBumpRequest(value string) *MaintenanceStatusApplyConfiguration {
+	b.ObservedBumpRequest = &value
 	return b
 }
 
