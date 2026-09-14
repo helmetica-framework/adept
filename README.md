@@ -30,6 +30,31 @@ the Action was created:
 | **Reagent** | A service chart wrapping an upstream (prima materia) chart; ships the Definitions for its service instance. |
 | **Definition** | The ritual's job template (`rituals.helmetica.io/v1`, namespaced, no status). Scaffolded and assayed by the transmuter, shipped by ferment. |
 | **Action** | A request to run a ritual: names a Definition via `spec.type`. The adept creates one Job per Action and mirrors its outcome in `status.phase` (`Pending` → `Running` → `Succeeded`/`Failed`). Terminal phases are final; no re-runs. Failures to resolve the instance namespace or the Definition are reported in `status.message`. |
+| **MaintenanceWindow** | A named span in which maintenance may start (`rituals.helmetica.io/v1`, cluster-scoped, no status). Operators own them; instances reference one by name instead of carrying their own schedule, which is what lets maintenance be batched. |
+
+## Maintenance windows
+
+A `MaintenanceWindow` says when maintenance may start, in an operator's local
+terms:
+
+```yaml
+apiVersion: rituals.helmetica.io/v1
+kind: MaintenanceWindow
+metadata:
+  name: sunday-night
+spec:
+  daysOfWeek: [sunday, monday, tuesday, wednesday, thursday]
+  time: "22:00"
+  duration: 6h
+  timeZone: Europe/Zurich
+```
+
+They are cluster-scoped: a handful of named windows serve instances across
+every namespace, so a lot of instances can be maintained on one shared
+schedule.
+
+The duration is not the time span when maintenance jobs may start.
+It's not bound, so a job that starts 5 minutes before the window ends will still continue.
 
 ## Quickstart
 
@@ -43,15 +68,21 @@ kubectl get actions -w   # TYPE=restart, PHASE Pending -> Running -> Succeeded/F
 ```
 
 The samples create a `restart` Definition (kubectl rollout restart of a
-deployment) and a `restart-now` Action that executes it.
+deployment), a `restart-now` Action that executes it, and a `sunday-night`
+MaintenanceWindow.
 
-Full deployment (CRDs, RBAC, manager) is packaged under `config/default`:
+Full deployment (CRDs, RBAC, manager, webhook) is packaged under
+`config/default`:
 
 ```bash
 kubectl apply -k config/default
 ```
 
+That overlay needs [cert-manager](https://cert-manager.io) in the cluster. The
+`MaintenanceWindow` validating webhook is served over TLS; cert-manager issues
+the certificate and injects its CA into the webhook configuration.
+
 ## Out of scope (for now)
 
 * `spec.args` injection into the Job — stored, not injected.
-* Scheduling/cron (recurring rituals) and re-runs on spec change.
+* Re-runs on spec change: terminal Action phases are final.

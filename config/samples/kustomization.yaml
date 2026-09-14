@@ -2,4 +2,5 @@
 resources:
 - v1_definition.yaml
 - v1_action.yaml
+- v1_maintenancewindow.yaml
 # +kubebuilder:scaffold:manifestskustomizesamples

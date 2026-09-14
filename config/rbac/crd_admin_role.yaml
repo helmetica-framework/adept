@@ -25,3 +25,17 @@ rules:
   - definitions/status
   verbs:
   - get
+- apiGroups:
+  - rituals.helmetica.io
+  resources:
+  - maintenancewindows
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+
+  
