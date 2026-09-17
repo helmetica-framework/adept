@@ -23,5 +23,21 @@ rules:
   resources:
   - actions/status
   - definitions/status
+  - maintenances/status
   verbs:
   - get
+- apiGroups:
+  - rituals.helmetica.io
+  resources:
+  - maintenancewindows
+  - maintenances
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+
+  

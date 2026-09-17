@@ -1,0 +1,32 @@
+# Mounts the webhook serving certificate into the manager and opens the port
+# the webhook service targets.
+- op: test
+  path: /spec/template/spec/containers/0/name
+  value: manager
+
+# Without this flag the manager serves the webhook with a self-signed
+# certificate the API server does not trust, and every call fails.
+- op: add
+  path: /spec/template/spec/containers/0/args/-
+  value: --webhook-cert-path=/tmp/k8s-webhook-server/serving-certs
+
+- op: add
+  path: /spec/template/spec/containers/0/volumeMounts/-
+  value:
+    mountPath: /tmp/k8s-webhook-server/serving-certs
+    name: webhook-certs
+    readOnly: true
+
+- op: add
+  path: /spec/template/spec/containers/0/ports/-
+  value:
+    containerPort: 9443
+    name: webhook-server
+    protocol: TCP
+
+- op: add
+  path: /spec/template/spec/volumes/-
+  value:
+    name: webhook-certs
+    secret:
+      secretName: webhook-server-cert

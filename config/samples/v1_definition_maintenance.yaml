@@ -1,0 +1,18 @@
+# The ritual a Maintenance runs by default. Reagents ship their own; this one
+# stands in for it so the samples produce a CronJob on their own.
+apiVersion: rituals.helmetica.io/v1
+kind: Definition
+metadata:
+  name: maintenance
+spec:
+  description: Routine maintenance for the application
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+            - name: maintenance
+              image: busybox
+              command: ["sh", "-c"]
+              args: ["echo running maintenance for my-service"]
+          restartPolicy: Never

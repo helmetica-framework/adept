@@ -16,6 +16,10 @@ func TestSchemeRegistration(t *testing.T) {
 	assert.True(t, scheme.Recognizes(GroupVersion.WithKind("DefinitionList")))
 	assert.True(t, scheme.Recognizes(GroupVersion.WithKind("Action")))
 	assert.True(t, scheme.Recognizes(GroupVersion.WithKind("ActionList")))
+	assert.True(t, scheme.Recognizes(GroupVersion.WithKind("MaintenanceWindow")))
+	assert.True(t, scheme.Recognizes(GroupVersion.WithKind("MaintenanceWindowList")))
+	assert.True(t, scheme.Recognizes(GroupVersion.WithKind("Maintenance")))
+	assert.True(t, scheme.Recognizes(GroupVersion.WithKind("MaintenanceList")))
 	assert.Equal(t, "rituals.helmetica.io", GroupVersion.Group)
 	assert.Equal(t, "v1", GroupVersion.Version)
 }

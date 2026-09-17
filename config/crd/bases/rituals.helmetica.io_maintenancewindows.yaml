@@ -1,0 +1,127 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.21.0
+  name: maintenancewindows.rituals.helmetica.io
+spec:
+  group: rituals.helmetica.io
+  names:
+    kind: MaintenanceWindow
+    listKind: MaintenanceWindowList
+    plural: maintenancewindows
+    singular: maintenancewindow
+  scope: Cluster
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.daysOfWeek
+      name: Days
+      type: string
+    - jsonPath: .spec.time
+      name: Time
+      type: string
+    - jsonPath: .spec.duration
+      name: Duration
+      type: string
+    - jsonPath: .spec.timeZone
+      name: Timezone
+      type: string
+    - jsonPath: .spec.default
+      name: Default
+      type: boolean
+    name: v1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          MaintenanceWindow is an operator-owned schedule that instances reference by
+          name. It is cluster-scoped: instances across every namespace share a small
+          set of named windows, which is what lets maintenance be batched.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              MaintenanceWindowSpec declares a recurring window in which maintenance may
+              start. The window opens at Time on each day listed in DaysOfWeek, read as wall
+              clock in TimeZone, and stays open for Duration.
+
+              Instances sharing a window are spread across the window by an offset derived
+              from the instance, so a window governing many instances does not start all
+              of them at once. Maintenance that has started is never interrupted by the
+              window closing.
+            properties:
+              daysOfWeek:
+                description: |-
+                  DaysOfWeek are the days a window starts on, with no repeats. A window
+                  running past midnight ends on the following day, which need not be
+                  listed here.
+                items:
+                  description: Day is a lowercase weekday name.
+                  enum:
+                  - sunday
+                  - monday
+                  - tuesday
+                  - wednesday
+                  - thursday
+                  - friday
+                  - saturday
+                  type: string
+                maxItems: 7
+                minItems: 1
+                type: array
+              default:
+                description: |-
+                  Default marks this window as the one instances take when they name no
+                  window of their own. At most one window may be the default; a second
+                  one claiming it is rejected.
+                type: boolean
+              duration:
+                description: |-
+                  Duration is the time span during which maintenance may start, between 1h and
+                  24h. Instances sharing a window are spread across it so they do not all
+                  start at once.
+
+                  It does not bound how long maintenance runs. A run that starts inside
+                  the window keeps going until it finishes, which may be well after the window
+                  has closed.
+                type: string
+                x-kubernetes-validations:
+                - message: duration must be a valid duration, for example 6h
+                  rule: self.matches('^([0-9]+([.][0-9]+)?(ns|us|ms|s|m|h))+$')
+              time:
+                description: |-
+                  Time is the wall-clock start of the window in TimeZone, "HH:MM" in
+                  24-hour form, for example "22:00".
+                type: string
+              timeZone:
+                default: UTC
+                description: |-
+                  TimeZone is the IANA zone name the window's Time is read in, for example
+                  "Europe/Zurich". Defaults to UTC.
+                minLength: 1
+                type: string
+            required:
+            - daysOfWeek
+            - duration
+            - time
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources: {}

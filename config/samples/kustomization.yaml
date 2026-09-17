@@ -1,5 +1,8 @@
 ## Append samples of your project ##
 resources:
 - v1_definition.yaml
+- v1_definition_maintenance.yaml
 - v1_action.yaml
+- v1_maintenancewindow.yaml
+- v1_maintenance.yaml
 # +kubebuilder:scaffold:manifestskustomizesamples

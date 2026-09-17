@@ -13,15 +13,20 @@ import (
 
 	"github.com/spf13/cobra"
 	"go.uber.org/multierr"
+	apiextv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/certwatcher"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
+	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	//+kubebuilder:scaffold:imports
 	ritualsv1 "github.com/helmetica-framework/adept/api/v1"
@@ -60,6 +65,12 @@ func init() {
 	controllerCmd.Flags().String("metrics-cert-path", "", "The directory that contains the metrics server certificate.")
 	controllerCmd.Flags().String("metrics-cert-name", "tls.crt", "The name of the metrics server certificate file.")
 	controllerCmd.Flags().String("metrics-cert-key", "tls.key", "The name of the metrics server key file.")
+
+	controllerCmd.Flags().Bool("enable-webhooks", true,
+		"Serve the admission webhooks. Set to false to run without certificates, e.g. against a cluster from your host.")
+	controllerCmd.Flags().String("webhook-cert-path", "", "The directory that contains the webhook certificate.")
+	controllerCmd.Flags().String("webhook-cert-name", "tls.crt", "The name of the webhook certificate file.")
+	controllerCmd.Flags().String("webhook-cert-key", "tls.key", "The name of the webhook key file.")
 }
 
 var controllerCmd = &cobra.Command{
@@ -73,6 +84,7 @@ func newScheme() *runtime.Scheme {
 	scheme := runtime.NewScheme()
 	utilruntime.Must(ritualsv1.AddToScheme(scheme))
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
+	utilruntime.Must(apiextv1.AddToScheme(scheme))
 	//+kubebuilder:scaffold:scheme
 	return scheme
 }
@@ -85,7 +97,13 @@ func runController(cmd *cobra.Command, _ []string) error {
 	metricsCertName, mcnerr := cmd.Flags().GetString("metrics-cert-name")
 	metricsCertKey, mckerr := cmd.Flags().GetString("metrics-cert-key")
 
-	if err := multierr.Combine(cnerr, mcperr, mcnerr, mckerr, smerr); err != nil {
+	enableWebhooks, ewerr := cmd.Flags().GetBool("enable-webhooks")
+	webhookCertPath, wcperr := cmd.Flags().GetString("webhook-cert-path")
+	webhookCertName, wcnerr := cmd.Flags().GetString("webhook-cert-name")
+	webhookCertKey, wckerr := cmd.Flags().GetString("webhook-cert-key")
+
+	if err := multierr.Combine(cnerr, mcperr, mcnerr, mckerr, smerr,
+		ewerr, wcperr, wcnerr, wckerr); err != nil {
 		return fmt.Errorf("failed to get flags: %w", err)
 	}
 
@@ -133,13 +151,45 @@ func runController(cmd *cobra.Command, _ []string) error {
 		})
 	}
 
+	var webhookCertWatcher *certwatcher.CertWatcher
+	var webhookTLSOpts []func(*tls.Config)
+
+	if enableWebhooks && webhookCertPath != "" {
+		cmd.Println("Initializing webhook certificate watcher using provided certificates",
+			"webhook-cert-path", webhookCertPath, "webhook-cert-name", webhookCertName, "webhook-cert-key", webhookCertKey)
+
+		var err error
+		webhookCertWatcher, err = certwatcher.New(
+			filepath.Join(webhookCertPath, webhookCertName),
+			filepath.Join(webhookCertPath, webhookCertKey),
+		)
+		if err != nil {
+			return fmt.Errorf("unable to initialize webhook certificate watcher: %w", err)
+		}
+
+		webhookTLSOpts = append(webhookTLSOpts, func(config *tls.Config) {
+			config.GetCertificate = webhookCertWatcher.GetCertificate
+		})
+	}
+
 	restConf := ctrl.GetConfigOrDie()
 	mgr, err := ctrl.NewManager(restConf, ctrl.Options{
 		Scheme:                 scheme,
 		Metrics:                metricsServerOptions,
+		WebhookServer:          webhook.NewServer(webhook.Options{TLSOpts: webhookTLSOpts}),
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
 		LeaderElectionID:       "adept.rituals.helmetica.io",
+
+		Cache: cache.Options{
+			ByObject: map[client.Object]cache.ByObject{
+				// Only the claim CRDs chrysopoeia generates. Without this the cache
+				// holds every CRD in the cluster to answer one lookup per bump.
+				&apiextv1.CustomResourceDefinition{}: {
+					Label: labels.SelectorFromSet(labels.Set{controllers.ManagedLabel: ""}),
+				},
+			},
+		},
 
 		LeaderElectionReleaseOnCancel: true,
 	})
@@ -160,7 +210,44 @@ func runController(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("unable to create Action controller: %w", err)
 	}
 
+	mm := controllers.MaintenanceManager{
+		Client:   mgr.GetClient(),
+		Scheme:   mgr.GetScheme(),
+		Recorder: mgr.GetEventRecorder("maintenance-controller"),
+		Log:      mgr.GetLogger().WithName("maintenance-controller"),
+	}
+
+	if err := mm.SetupWithManager("maintenance", mgr); err != nil {
+		return fmt.Errorf("unable to create Maintenance controller: %w", err)
+	}
+
+	vm := controllers.VersionManager{
+		Client:   mgr.GetClient(),
+		Scheme:   mgr.GetScheme(),
+		Recorder: mgr.GetEventRecorder("maintenance-version-controller"),
+		Log:      mgr.GetLogger().WithName("maintenance-version-controller"),
+	}
+
+	if err := vm.SetupWithManager("maintenance-version", mgr); err != nil {
+		return fmt.Errorf("unable to create Version controller: %w", err)
+	}
+
+	if enableWebhooks {
+		if err := (&controllers.MaintenanceWindowValidator{
+			Client: mgr.GetClient(),
+		}).SetupWithManager(mgr); err != nil {
+			return fmt.Errorf("unable to create MaintenanceWindow webhook: %w", err)
+		}
+	}
+
 	//+kubebuilder:scaffold:builder
+
+	if webhookCertWatcher != nil {
+		cmd.Println("Adding webhook certificate watcher to manager")
+		if err := mgr.Add(webhookCertWatcher); err != nil {
+			return fmt.Errorf("unable to add webhook certificate watcher: %w", err)
+		}
+	}
 
 	if metricsCertWatcher != nil {
 		cmd.Println("Adding metrics certificate watcher to manager")
