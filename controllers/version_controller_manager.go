@@ -29,7 +29,10 @@ import (
 // versionFieldOwner is this controller's server-side-apply field manager. It is
 // its own so that what it writes and what MaintenanceManager writes can share
 // an object without either clobbering the other.
-const versionFieldOwner = client.FieldOwner("adept:maintenance-version")
+const (
+	versionFieldOwner = client.FieldOwner("adept:maintenance-version")
+	bumpFieldOwner    = client.FieldOwner("adept:bump-version")
+)
 
 // +kubebuilder:rbac:groups=apiextensions.k8s.io,resources=customresourcedefinitions,verbs=get;list;watch
 
@@ -366,7 +369,7 @@ func (r *VersionManager) recordBumpRequest(ctx context.Context, md *ritualsv1.Ma
 		WithStatus(ritualsacv1.MaintenanceStatus().
 			WithObservedBumpRequest(request))
 
-	if err := r.Status().Apply(ctx, status, versionFieldOwner, client.ForceOwnership); err != nil {
+	if err := r.Status().Apply(ctx, status, bumpFieldOwner, client.ForceOwnership); err != nil {
 		return fmt.Errorf("recording the version update: %w", err)
 	}
 	return nil

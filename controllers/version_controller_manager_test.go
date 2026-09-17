@@ -330,6 +330,60 @@ func TestVersion_AManualBumpLeavesTheScheduledWatermarkAlone(t *testing.T) {
 		"both paths are settled, so nothing may be written again")
 }
 
+// The two watermarks need a field manager each. A server-side apply replaces
+// everything its manager owns, so one manager writing only observedBumpRequest
+// drops the versionUpdatedFor it wrote last time, and the other way round. Both
+// tests below reconcile twice, because the clobber needs the first write to
+// come from the controller's own apply rather than from a seeded status.
+func TestVersion_AManualBumpDoesNotClobberTheScheduledWatermark(t *testing.T) {
+	inWindow := bumpMoment(t)
+	now := inWindow
+
+	m, c := managedVersionManager(namedWindow("sunday-night", false), maintenance("sunday-night"))
+	m.Now = func() time.Time { return now }
+
+	reconcileVersion(t, m)
+	require.NotNil(t, getVersionMaintenance(t, c).Status.VersionUpdatedFor)
+
+	md := getVersionMaintenance(t, c)
+	md.Annotations = map[string]string{bumpNowAnnotation: "now"}
+	require.NoError(t, c.Update(context.Background(), md))
+
+	now = shut(t)
+	reconcileVersion(t, m)
+
+	got := getVersionMaintenance(t, c)
+	assert.Equal(t, "now", got.Status.ObservedBumpRequest)
+	require.NotNil(t, got.Status.VersionUpdatedFor)
+	assert.True(t, got.Status.VersionUpdatedFor.Time.Equal(dueAt(t, inWindow)))
+}
+
+func TestVersion_AScheduledBumpDoesNotClobberTheManualWatermark(t *testing.T) {
+	now := shut(t)
+
+	m, c := managedVersionManager(namedWindow("sunday-night", false), requestedMaintenance("now"))
+	m.Now = func() time.Time { return now }
+
+	reconcileVersion(t, m)
+	require.Equal(t, "now", getVersionMaintenance(t, c).Status.ObservedBumpRequest)
+
+	// A newer version has to appear, or the scheduled path finds nothing to
+	// bump and never reaches its watermark.
+	crd := &apiextv1.CustomResourceDefinition{}
+	require.NoError(t, c.Get(context.Background(),
+		types.NamespacedName{Name: "databases.example.org"}, crd))
+	crd.Spec.Versions = databaseCRD("3.0.0", "2.1.0", "2.0.0").Spec.Versions
+	require.NoError(t, c.Update(context.Background(), crd))
+
+	now = bumpMoment(t)
+	reconcileVersion(t, m)
+
+	got := getVersionMaintenance(t, c)
+	require.Equal(t, "3.0.0", claimVersion(t, c))
+	require.NotNil(t, got.Status.VersionUpdatedFor)
+	assert.Equal(t, "now", got.Status.ObservedBumpRequest)
+}
+
 func TestVersion_NoAnnotationMeansNoManualBump(t *testing.T) {
 	m, c := managedVersionManager(namedWindow("sunday-night", false), maintenance("sunday-night"))
 	m.Now = func() time.Time { return shut(t) }
