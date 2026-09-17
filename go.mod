@@ -1,6 +1,6 @@
 module github.com/helmetica-framework/adept
 
-go 1.26.4
+go 1.27
 
 require (
 	github.com/go-logr/logr v1.4.3
@@ -15,6 +15,7 @@ require (
 	k8s.io/utils v0.0.0-20260319190234-28399d86e0b5
 	sigs.k8s.io/controller-runtime v0.24.1
 	sigs.k8s.io/structured-merge-diff/v6 v6.4.0
+	sigs.k8s.io/structured-merge-diff/v7 v7.0.0
 )
 
 require (
