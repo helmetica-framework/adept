@@ -19,8 +19,9 @@ type MaintenanceStatusApplyConfiguration struct {
 	ObservedGeneration *int64 `json:"observedGeneration,omitempty"`
 	// CronJobName is the CronJob executing the schedule, in this namespace.
 	CronJobName *string `json:"cronJobName,omitempty"`
-	// VersionUpdatedFor is the maintenance this instance's version was last
-	// moved for. It stays empty while the instance pins its own version.
+	// VersionUpdatedFor is the maintenance this instance last settled its
+	// version for. A suspended instance settles without moving anything. It
+	// stays empty while the instance pins its own version.
 	VersionUpdatedFor *metav1.Time `json:"versionUpdatedFor,omitempty"`
 	// ObservedBumpRequest is the value of the
 	// rituals.helmetica.io/bump-now annotation this instance last acted on.

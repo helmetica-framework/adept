@@ -304,7 +304,7 @@ func (r *VersionManager) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	}
 
 	// manual bump
-	if request, outstanding := bumpRequested(md); outstanding {
+	if request, outstanding := bumpRequested(md); outstanding && !md.Spec.Suspend {
 		if _, err := r.bumpVersion(ctx, md, log); err != nil {
 			return ctrl.Result{}, err
 		}
@@ -336,14 +336,18 @@ func (r *VersionManager) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 }
 
 // bump is the scheduled caller: it moves the version and watermarks the
-// maintenance it acted for. Nothing written means no watermark, because the
-// watermark says a version was written.
+// maintenance it settled. Finding nothing to move means no watermark, so an
+// occurrence that could still produce a version stays outstanding.
 func (r *VersionManager) bump(ctx context.Context, md *ritualsv1.Maintenance, occurrence time.Time, log logr.Logger) error {
-	bumped, err := r.bumpVersion(ctx, md, log.WithValues("maintenance", occurrence))
-	if err != nil || !bumped {
-		return err
+	if !md.Spec.Suspend {
+		bumped, err := r.bumpVersion(ctx, md, log.WithValues("maintenance", occurrence))
+		if err != nil || !bumped {
+			return err
+		}
 	}
 
+	// A suspended instance records the occurrence without moving anything, so
+	// resuming inside the window does not bump for one already slept through.
 	return r.recordBump(ctx, md, occurrence)
 }
 

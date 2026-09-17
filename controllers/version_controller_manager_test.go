@@ -394,6 +394,122 @@ func TestVersion_NoAnnotationMeansNoManualBump(t *testing.T) {
 	assert.Empty(t, getVersionMaintenance(t, c).Status.ObservedBumpRequest)
 }
 
+// suspendedMaintenance is an instance whose maintenance is switched off,
+// optionally carrying a bump-now annotation as well.
+func suspendedMaintenance(request string) *ritualsv1.Maintenance {
+	md := maintenance("sunday-night")
+	md.Spec.Suspend = true
+	if request != "" {
+		md.Annotations = map[string]string{bumpNowAnnotation: request}
+	}
+	return md
+}
+
+// resume switches suspension off on the stored object, the way an operator
+// editing the spec does.
+func resume(t *testing.T, c client.Client) {
+	t.Helper()
+	md := getVersionMaintenance(t, c)
+	md.Spec.Suspend = false
+	require.NoError(t, c.Update(context.Background(), md))
+}
+
+func TestVersion_SuspendedDoesNotBumpOnSchedule(t *testing.T) {
+	m, c := managedVersionManager(namedWindow("sunday-night", false), suspendedMaintenance(""))
+	m.Now = func() time.Time { return bumpMoment(t) }
+
+	reconcileVersion(t, m)
+
+	assert.Empty(t, claimVersion(t, c), "a suspended instance moves no version")
+}
+
+func TestVersion_SuspendedSettlesTheOccurrenceItSleptThrough(t *testing.T) {
+	// Without this the occurrence is still outstanding on resume, and
+	// unsuspending inside the window would bump straight away.
+	inWindow := bumpMoment(t)
+	m, c := managedVersionManager(namedWindow("sunday-night", false), suspendedMaintenance(""))
+	m.Now = func() time.Time { return inWindow }
+
+	reconcileVersion(t, m)
+
+	got := getVersionMaintenance(t, c)
+	require.NotNil(t, got.Status.VersionUpdatedFor)
+	assert.True(t, got.Status.VersionUpdatedFor.Time.Equal(dueAt(t, inWindow)))
+}
+
+func TestVersion_ResumingInsideTheWindowSkipsTheOccurrence(t *testing.T) {
+	inWindow := bumpMoment(t)
+	m, c := managedVersionManager(namedWindow("sunday-night", false), suspendedMaintenance(""))
+	m.Now = func() time.Time { return inWindow }
+
+	reconcileVersion(t, m)
+	resume(t, c)
+	reconcileVersion(t, m)
+
+	assert.Empty(t, claimVersion(t, c),
+		"the occurrence was settled while suspended, so resuming waits for the next one")
+}
+
+func TestVersion_ResumingActsOnTheNextMaintenance(t *testing.T) {
+	// Suspension skips occurrences, it does not settle the instance for good.
+	inWindow := bumpMoment(t)
+	m, c := managedVersionManager(namedWindow("sunday-night", false), suspendedMaintenance(""))
+	m.Now = func() time.Time { return inWindow }
+
+	reconcileVersion(t, m)
+	resume(t, c)
+
+	next := inWindow.AddDate(0, 0, 7)
+	m.Now = func() time.Time { return next }
+	reconcileVersion(t, m)
+
+	assert.Equal(t, "2.1.0", claimVersion(t, c))
+}
+
+func TestVersion_SuspendedIgnoresTheBumpRequest(t *testing.T) {
+	m, c := managedVersionManager(namedWindow("sunday-night", false), suspendedMaintenance("now"))
+	m.Now = func() time.Time { return shut(t) }
+
+	reconcileVersion(t, m)
+
+	assert.Empty(t, claimVersion(t, c))
+	assert.Empty(t, getVersionMaintenance(t, c).Status.ObservedBumpRequest,
+		"an unserved request must not be watermarked, or resuming would swallow it")
+}
+
+func TestVersion_ResumingServesAnOutstandingBumpRequest(t *testing.T) {
+	m, c := managedVersionManager(namedWindow("sunday-night", false), suspendedMaintenance("now"))
+	m.Now = func() time.Time { return shut(t) }
+
+	reconcileVersion(t, m)
+	resume(t, c)
+	reconcileVersion(t, m)
+
+	assert.Equal(t, "2.1.0", claimVersion(t, c))
+	assert.Equal(t, "now", getVersionMaintenance(t, c).Status.ObservedBumpRequest)
+}
+
+func TestVersion_SuspendedStillRequeuesForTheNextBump(t *testing.T) {
+	// The schedule stays in place and stays visible, which is what suspend
+	// promises. Only the acting stops.
+	m, _ := managedVersionManager(namedWindow("sunday-night", false), suspendedMaintenance(""))
+	m.Now = func() time.Time { return shut(t) }
+
+	assert.Positive(t, reconcileVersion(t, m).RequeueAfter)
+}
+
+func TestVersion_SuspendedWritesNothingTwiceForTheSameMaintenance(t *testing.T) {
+	inWindow := bumpMoment(t)
+	m, c := managedVersionManager(namedWindow("sunday-night", false), suspendedMaintenance(""))
+	m.Now = func() time.Time { return inWindow }
+
+	reconcileVersion(t, m)
+	settled := getVersionMaintenance(t, c).ResourceVersion
+	reconcileVersion(t, m)
+
+	assert.Equal(t, settled, getVersionMaintenance(t, c).ResourceVersion)
+}
+
 // svcNamespace is the instance namespace a Maintenance lives in. chrysopoeia
 // annotates it with the claim it was rendered for.
 func svcNamespace(annotations map[string]string) *corev1.Namespace {
