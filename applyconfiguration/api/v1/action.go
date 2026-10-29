@@ -16,7 +16,7 @@ import (
 //
 // Action triggers a ritual Definition and tracks its Job to completion.
 type ActionApplyConfiguration struct {
-	metav1.TypeMetaApplyConfiguration    `json:",inline"`
+	metav1.TypeMetaApplyConfiguration    `json:""`
 	*metav1.ObjectMetaApplyConfiguration `json:"metadata,omitempty"`
 	Spec                                 *ActionSpecApplyConfiguration   `json:"spec,omitempty"`
 	Status                               *ActionStatusApplyConfiguration `json:"status,omitempty"`

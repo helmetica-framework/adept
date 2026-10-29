@@ -332,7 +332,7 @@ func (r *VersionManager) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		return ctrl.Result{}, fmt.Errorf("resolving the next bump: %w", err)
 	}
 
-	return ctrl.Result{RequeueAfter: time.Until(bump)}, nil
+	return ctrl.Result{RequeueAfter: bump.Sub(now)}, nil
 }
 
 // bump is the scheduled caller: it moves the version and watermarks the

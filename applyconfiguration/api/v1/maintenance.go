@@ -18,7 +18,7 @@ import (
 // namespace, names a MaintenanceWindow to run in and a Definition to run, and
 // produces the CronJob that fires it.
 type MaintenanceApplyConfiguration struct {
-	metav1.TypeMetaApplyConfiguration    `json:",inline"`
+	metav1.TypeMetaApplyConfiguration    `json:""`
 	*metav1.ObjectMetaApplyConfiguration `json:"metadata,omitempty"`
 	Spec                                 *MaintenanceSpecApplyConfiguration   `json:"spec,omitempty"`
 	Status                               *MaintenanceStatusApplyConfiguration `json:"status,omitempty"`

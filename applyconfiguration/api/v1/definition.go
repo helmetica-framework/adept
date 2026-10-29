@@ -16,7 +16,7 @@ import (
 //
 // Definition is a ritual: a named, on-demand job template.
 type DefinitionApplyConfiguration struct {
-	metav1.TypeMetaApplyConfiguration    `json:",inline"`
+	metav1.TypeMetaApplyConfiguration    `json:""`
 	*metav1.ObjectMetaApplyConfiguration `json:"metadata,omitempty"`
 	Spec                                 *DefinitionSpecApplyConfiguration `json:"spec,omitempty"`
 }
