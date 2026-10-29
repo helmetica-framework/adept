@@ -18,7 +18,7 @@ import (
 // name. It is cluster-scoped: instances across every namespace share a small
 // set of named windows, which is what lets maintenance be batched.
 type MaintenanceWindowApplyConfiguration struct {
-	metav1.TypeMetaApplyConfiguration    `json:",inline"`
+	metav1.TypeMetaApplyConfiguration    `json:""`
 	*metav1.ObjectMetaApplyConfiguration `json:"metadata,omitempty"`
 	Spec                                 *MaintenanceWindowSpecApplyConfiguration `json:"spec,omitempty"`
 }

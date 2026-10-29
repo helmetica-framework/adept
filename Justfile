@@ -21,6 +21,11 @@ test: manifests generate
     go test ./... -race -coverprofile cover.tmp.out
     grep -v -e "zz_generated.deepcopy.go" -e "/applyconfiguration/" cover.tmp.out > cover.out
 
+# Bump direct dependencies to their latest version, then run the tests
+bump: && test
+    go get $(go list -m -f '{{{{if not (or .Indirect .Main)}}{{{{.Path}}@latest{{{{end}}' all)
+    go mod tidy
+
 # Generate ClusterRole, CustomResourceDefinition and webhook objects
 manifests:
     {{ CONTROLLER_GEN }} rbac:roleName=manager-role crd:generateEmbeddedObjectMeta=true webhook paths="./..." output:crd:artifacts:config=config/crd/bases output:webhook:artifacts:config=config/webhook
