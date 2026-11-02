@@ -3,7 +3,7 @@
 # duration is the time span in which maintenance may start, not a limit on how long
 # it runs: instances sharing this window are spread across 22:00 to 04:00, and
 # whatever starts in that window runs to completion.
-apiVersion: rituals.helmetica.io/v1
+apiVersion: adept.helmetica.io/v1
 kind: MaintenanceWindow
 metadata:
   name: sunday-night

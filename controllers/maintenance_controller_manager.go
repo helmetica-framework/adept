@@ -19,8 +19,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 
-	ritualsv1 "github.com/helmetica-framework/adept/api/v1"
-	ritualsacv1 "github.com/helmetica-framework/adept/applyconfiguration/api/v1"
+	adeptv1 "github.com/helmetica-framework/adept/api/v1"
+	adeptacv1 "github.com/helmetica-framework/adept/applyconfiguration/api/v1"
 	"github.com/helmetica-framework/adept/schedule"
 )
 
@@ -28,8 +28,8 @@ import (
 // status adept writes.
 const fieldOwner = client.FieldOwner("adept:maintenance")
 
-// +kubebuilder:rbac:groups=rituals.helmetica.io,resources=maintenances,verbs=get;list;watch
-// +kubebuilder:rbac:groups=rituals.helmetica.io,resources=maintenances/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=adept.helmetica.io,resources=maintenances,verbs=get;list;watch
+// +kubebuilder:rbac:groups=adept.helmetica.io,resources=maintenances/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=batch,resources=cronjobs,verbs=create;get;list;watch;update;patch;delete
 
 // MaintenanceManager reconciles Maintenance objects into the CronJob that
@@ -48,7 +48,7 @@ type MaintenanceManager struct {
 func (r *MaintenanceManager) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := r.Log.WithValues("maintenance", req.NamespacedName)
 
-	md := &ritualsv1.Maintenance{}
+	md := &adeptv1.Maintenance{}
 	err := r.Get(ctx, req.NamespacedName, md)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
@@ -83,8 +83,8 @@ func (r *MaintenanceManager) Reconcile(ctx context.Context, req ctrl.Request) (c
 			log.Info("schedule changed", "from", md.Status.Schedule, "to", want.Schedule)
 		}
 
-		status := ritualsacv1.Maintenance(md.Name, md.Namespace).
-			WithStatus(ritualsacv1.MaintenanceStatus().
+		status := adeptacv1.Maintenance(md.Name, md.Namespace).
+			WithStatus(adeptacv1.MaintenanceStatus().
 				WithSchedule(want.Schedule).
 				WithCronJobName(want.CronJobName).
 				WithObservedGeneration(want.ObservedGeneration).
@@ -107,29 +107,29 @@ func (r *MaintenanceManager) Reconcile(ctx context.Context, req ctrl.Request) (c
 // still want its version moved on the window's schedule, so a missing one
 // publishes the schedule, removes the CronJob and reports the reason without an
 // error.
-func (r *MaintenanceManager) desiredState(ctx context.Context, md *ritualsv1.Maintenance) (ritualsv1.MaintenanceStatus, error) {
+func (r *MaintenanceManager) desiredState(ctx context.Context, md *adeptv1.Maintenance) (adeptv1.MaintenanceStatus, error) {
 	window, err := resolveWindow(ctx, r.Client, md)
 	if err != nil {
-		return ritualsv1.MaintenanceStatus{}, err
+		return adeptv1.MaintenanceStatus{}, err
 	}
 
 	cron, tz, err := schedule.CronSchedule(window.Spec, spreadIdentity(md))
 	if err != nil {
-		return ritualsv1.MaintenanceStatus{}, fmt.Errorf("resolving cron schedule: %w", err)
+		return adeptv1.MaintenanceStatus{}, fmt.Errorf("resolving cron schedule: %w", err)
 	}
 
-	ad := &ritualsv1.Definition{}
+	ad := &adeptv1.Definition{}
 
 	err = r.Get(ctx, client.ObjectKey{Name: md.Spec.Ritual, Namespace: md.GetNamespace()}, ad)
 	if err != nil && !apierrors.IsNotFound(err) {
-		return ritualsv1.MaintenanceStatus{}, fmt.Errorf("getting ritual %q: %w", md.Spec.Ritual, err)
+		return adeptv1.MaintenanceStatus{}, fmt.Errorf("getting ritual %q: %w", md.Spec.Ritual, err)
 	}
 
 	if err != nil && apierrors.IsNotFound(err) {
 		if err := r.deleteCronJob(ctx, md); err != nil {
-			return ritualsv1.MaintenanceStatus{}, err
+			return adeptv1.MaintenanceStatus{}, err
 		}
-		return ritualsv1.MaintenanceStatus{
+		return adeptv1.MaintenanceStatus{
 			Schedule: cron,
 			Message:  fmt.Sprintf("no Definition %q in this namespace; version bumping only", md.Spec.Ritual),
 		}, nil
@@ -137,17 +137,17 @@ func (r *MaintenanceManager) desiredState(ctx context.Context, md *ritualsv1.Mai
 
 	err = r.applyCronJob(ctx, md, ad, cron, tz)
 	if err != nil {
-		return ritualsv1.MaintenanceStatus{}, fmt.Errorf("applying cronjob: %w", err)
+		return adeptv1.MaintenanceStatus{}, fmt.Errorf("applying cronjob: %w", err)
 	}
 
-	return ritualsv1.MaintenanceStatus{Schedule: cron, CronJobName: md.GetName()}, nil
+	return adeptv1.MaintenanceStatus{Schedule: cron, CronJobName: md.GetName()}, nil
 }
 
 // applyCronJob server-side-applies the CronJob the Maintenance owns. Only the
 // fields adept decides are set here; the job template is the Definition's, read
 // into its apply configuration rather than converted from the whole object,
 // which would claim every zero value as deliberate.
-func (r *MaintenanceManager) applyCronJob(ctx context.Context, md *ritualsv1.Maintenance, def *ritualsv1.Definition, cronSchedule, timeZone string) error {
+func (r *MaintenanceManager) applyCronJob(ctx context.Context, md *adeptv1.Maintenance, def *adeptv1.Definition, cronSchedule, timeZone string) error {
 	owner, err := controllerRef(md, r.Scheme)
 	if err != nil {
 		return fmt.Errorf("building owner reference: %w", err)
@@ -173,7 +173,7 @@ func (r *MaintenanceManager) applyCronJob(ctx context.Context, md *ritualsv1.Mai
 	return r.Apply(ctx, cronJob, fieldOwner, client.ForceOwnership)
 }
 
-func (r *MaintenanceManager) deleteCronJob(ctx context.Context, md *ritualsv1.Maintenance) error {
+func (r *MaintenanceManager) deleteCronJob(ctx context.Context, md *adeptv1.Maintenance) error {
 	cj := &batchv1.CronJob{}
 
 	err := r.Get(ctx, client.ObjectKey{Name: md.GetName(), Namespace: md.GetNamespace()}, cj)
@@ -225,7 +225,7 @@ func (r *MaintenanceManager) MaintenanceWindowMapFunc(ctx context.Context, o cli
 // DefinitionMapFunc maps a Definition to the Maintenances in its namespace
 // naming it, so repairing a ritual heals its instances.
 func (r *MaintenanceManager) DefinitionMapFunc(ctx context.Context, o client.Object) []ctrl.Request {
-	list := &ritualsv1.MaintenanceList{}
+	list := &adeptv1.MaintenanceList{}
 	if err := r.List(ctx, list, client.InNamespace(o.GetNamespace())); err != nil {
 		r.Log.Error(err, "listing maintenances for a ritual", "definition", client.ObjectKeyFromObject(o))
 		return nil
@@ -247,22 +247,22 @@ func (r *MaintenanceManager) DefinitionMapFunc(ctx context.Context, o client.Obj
 func (r *MaintenanceManager) SetupWithManager(name string, mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		Named(name).
-		For(&ritualsv1.Maintenance{}).
+		For(&adeptv1.Maintenance{}).
 		Owns(&batchv1.CronJob{}).
-		Watches(&ritualsv1.MaintenanceWindow{}, handler.EnqueueRequestsFromMapFunc(r.MaintenanceWindowMapFunc)).
-		Watches(&ritualsv1.Definition{}, handler.EnqueueRequestsFromMapFunc(r.DefinitionMapFunc)).
+		Watches(&adeptv1.MaintenanceWindow{}, handler.EnqueueRequestsFromMapFunc(r.MaintenanceWindowMapFunc)).
+		Watches(&adeptv1.Definition{}, handler.EnqueueRequestsFromMapFunc(r.DefinitionMapFunc)).
 		Complete(r)
 }
 
 // resolveWindow returns the window a maintenance runs in: the one it names, or
 // the one marked as the default when it names none.
-func resolveWindow(ctx context.Context, c client.Client, md *ritualsv1.Maintenance) (ritualsv1.MaintenanceWindow, error) {
-	wl := &ritualsv1.MaintenanceWindowList{}
+func resolveWindow(ctx context.Context, c client.Client, md *adeptv1.Maintenance) (adeptv1.MaintenanceWindow, error) {
+	wl := &adeptv1.MaintenanceWindowList{}
 	if err := c.List(ctx, wl); err != nil {
-		return ritualsv1.MaintenanceWindow{}, fmt.Errorf("listing maintenance windows: %w", err)
+		return adeptv1.MaintenanceWindow{}, fmt.Errorf("listing maintenance windows: %w", err)
 	}
 
-	var window ritualsv1.MaintenanceWindow
+	var window adeptv1.MaintenanceWindow
 	for _, w := range wl.Items {
 		if md.Spec.Window == "" && w.Spec.Default {
 			window = w
@@ -274,9 +274,9 @@ func resolveWindow(ctx context.Context, c client.Client, md *ritualsv1.Maintenan
 
 	if window.Name == "" {
 		if md.Spec.Window == "" {
-			return ritualsv1.MaintenanceWindow{}, fmt.Errorf("no maintenance window is marked as the default")
+			return adeptv1.MaintenanceWindow{}, fmt.Errorf("no maintenance window is marked as the default")
 		}
-		return ritualsv1.MaintenanceWindow{}, fmt.Errorf("no maintenance window %q", md.Spec.Window)
+		return adeptv1.MaintenanceWindow{}, fmt.Errorf("no maintenance window %q", md.Spec.Window)
 	}
 
 	return window, nil
@@ -285,7 +285,7 @@ func resolveWindow(ctx context.Context, c client.Client, md *ritualsv1.Maintenan
 // spreadIdentity is what the schedule package spreads an instance by. The
 // CronJob's schedule and anything timed against it must pass the same one, or
 // they land in different minutes of the window.
-func spreadIdentity(md *ritualsv1.Maintenance) string {
+func spreadIdentity(md *adeptv1.Maintenance) string {
 	return fmt.Sprintf("%s/%s", md.GetNamespace(), md.GetName())
 }
 
@@ -293,12 +293,12 @@ func spreadIdentity(md *ritualsv1.Maintenance) string {
 // when it is the default, by empty spec.window. Windows are cluster-scoped, so
 // this lists across namespaces.
 func maintenanceForWindow(ctx context.Context, c client.Client, log logr.Logger, o client.Object) []ctrl.Request {
-	window, ok := o.(*ritualsv1.MaintenanceWindow)
+	window, ok := o.(*adeptv1.MaintenanceWindow)
 	if !ok {
 		return nil
 	}
 
-	list := &ritualsv1.MaintenanceList{}
+	list := &adeptv1.MaintenanceList{}
 	if err := c.List(ctx, list); err != nil {
 		log.Error(err, "listing maintenances for a window", "window", window.GetName())
 		return nil

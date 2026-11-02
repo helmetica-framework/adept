@@ -24,7 +24,7 @@ type MaintenanceStatusApplyConfiguration struct {
 	// stays empty while the instance pins its own version.
 	VersionUpdatedFor *metav1.Time `json:"versionUpdatedFor,omitempty"`
 	// ObservedBumpRequest is the value of the
-	// rituals.helmetica.io/bump-now annotation this instance last acted on.
+	// adept.helmetica.io/bump-now annotation this instance last acted on.
 	// Set the annotation to any new value to move the version straight away
 	// instead of waiting for the window.
 	ObservedBumpRequest *string `json:"observedBumpRequest,omitempty"`

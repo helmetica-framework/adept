@@ -13,7 +13,7 @@ import (
 	admissionv1 "k8s.io/api/admissionregistration/v1"
 	k8syaml "k8s.io/apimachinery/pkg/util/yaml"
 
-	ritualsv1 "github.com/helmetica-framework/adept/api/v1"
+	adeptv1 "github.com/helmetica-framework/adept/api/v1"
 )
 
 // Guards the generated webhook manifest. controller-gen writes it from the
@@ -31,8 +31,8 @@ func TestValidatingWebhookPathMatchesTheServedPath(t *testing.T) {
 	// Mirrors generateValidatePath in controller-runtime's webhook builder:
 	// "/validate-" + group with dots as dashes + "-" + version + "-" + lowercase kind.
 	want := "/validate-" +
-		strings.ReplaceAll(ritualsv1.GroupVersion.Group, ".", "-") + "-" +
-		ritualsv1.GroupVersion.Version + "-" +
+		strings.ReplaceAll(adeptv1.GroupVersion.Group, ".", "-") + "-" +
+		adeptv1.GroupVersion.Version + "-" +
 		strings.ToLower("MaintenanceWindow")
 
 	require.NotNil(t, webhook.ClientConfig.Service)

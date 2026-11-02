@@ -29,7 +29,7 @@ func Action(name, namespace string) *ActionApplyConfiguration {
 	b.WithName(name)
 	b.WithNamespace(namespace)
 	b.WithKind("Action")
-	b.WithAPIVersion("rituals.helmetica.io/v1")
+	b.WithAPIVersion("adept.helmetica.io/v1")
 	return b
 }
 
@@ -50,7 +50,7 @@ func ExtractActionFrom(action *apiv1.Action, fieldManager string, subresource st
 	b.WithNamespace(action.Namespace)
 
 	b.WithKind("Action")
-	b.WithAPIVersion("rituals.helmetica.io/v1")
+	b.WithAPIVersion("adept.helmetica.io/v1")
 	return b, nil
 }
 

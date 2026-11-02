@@ -20,7 +20,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 
-	ritualsv1 "github.com/helmetica-framework/adept/api/v1"
+	adeptv1 "github.com/helmetica-framework/adept/api/v1"
 )
 
 const (
@@ -33,12 +33,12 @@ const (
 	// actionNameAnnotation and actionNamespaceAnnotation point a Job back to
 	// the Action that created it, so Job events can be mapped to reconcile
 	// requests across namespaces (owner refs don't work cross-namespace).
-	actionNameAnnotation      = "rituals.helmetica.io/action-name"
-	actionNamespaceAnnotation = "rituals.helmetica.io/action-namespace"
+	actionNameAnnotation      = "adept.helmetica.io/action-name"
+	actionNamespaceAnnotation = "adept.helmetica.io/action-namespace"
 
 	// actionFinalizer guards Job cleanup: owner references don't work across
 	// namespaces, so the Job is deleted explicitly when the Action goes away.
-	actionFinalizer = "rituals.helmetica.io/job-cleanup"
+	actionFinalizer = "adept.helmetica.io/job-cleanup"
 )
 
 // ActionManager reconciles Action objects: it creates a Job from the referenced
@@ -50,9 +50,9 @@ type ActionManager struct {
 	Log      logr.Logger
 }
 
-// +kubebuilder:rbac:groups=rituals.helmetica.io,resources=definitions,verbs=get;list;watch
-// +kubebuilder:rbac:groups=rituals.helmetica.io,resources=actions,verbs=get;list;watch;update;patch
-// +kubebuilder:rbac:groups=rituals.helmetica.io,resources=actions/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=adept.helmetica.io,resources=definitions,verbs=get;list;watch
+// +kubebuilder:rbac:groups=adept.helmetica.io,resources=actions,verbs=get;list;watch;update;patch
+// +kubebuilder:rbac:groups=adept.helmetica.io,resources=actions/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=batch,resources=jobs,verbs=create;get;list;watch;delete
 // +kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch
 // +kubebuilder:rbac:groups=events.k8s.io,resources=events,verbs=create;patch
@@ -66,7 +66,7 @@ type ActionManager struct {
 func (r *ActionManager) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := r.Log.WithValues("action", req.NamespacedName)
 
-	act := &ritualsv1.Action{}
+	act := &adeptv1.Action{}
 	err := r.Get(ctx, req.NamespacedName, act)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
@@ -85,8 +85,8 @@ func (r *ActionManager) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 		return ctrl.Result{}, r.finalize(ctx, act)
 	}
 
-	if act.Status.Phase == ritualsv1.ActionPhaseSucceeded ||
-		act.Status.Phase == ritualsv1.ActionPhaseFailed {
+	if act.Status.Phase == adeptv1.ActionPhaseSucceeded ||
+		act.Status.Phase == adeptv1.ActionPhaseFailed {
 		log.V(1).Info("action reached a terminal phase, skipping")
 		return ctrl.Result{}, nil
 	}
@@ -127,17 +127,17 @@ func (r *ActionManager) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 // terminal (warning event + Failed); an already-existing Job is adopted. The
 // Job is owned by the Action only when both live in the same namespace —
 // cross-namespace owner references are invalid in Kubernetes.
-func (r *ActionManager) createJob(ctx context.Context, act *ritualsv1.Action, ns string) error {
+func (r *ActionManager) createJob(ctx context.Context, act *adeptv1.Action, ns string) error {
 	log := r.Log.WithValues("action", client.ObjectKeyFromObject(act), "type", act.Spec.Type, "instanceNamespace", ns)
 
-	actD := &ritualsv1.Definition{}
+	actD := &adeptv1.Definition{}
 	err := r.Get(ctx, client.ObjectKey{Name: act.Spec.Type, Namespace: ns}, actD)
 	if apierrors.IsNotFound(err) {
 		// Missing Definition is terminal: warn and fail, don't requeue.
 		log.Info("no definition found, failing the action")
 		r.Recorder.Eventf(act, nil, corev1.EventTypeWarning, "DefinitionNotFound", "Create",
 			"no Definition %q in namespace %s", act.Spec.Type, ns)
-		act.Status.Phase = ritualsv1.ActionPhaseFailed
+		act.Status.Phase = adeptv1.ActionPhaseFailed
 		act.Status.Message = fmt.Sprintf("no Definition %q in namespace %s", act.Spec.Type, ns)
 		return r.updateStatus(ctx, act)
 	}
@@ -180,7 +180,7 @@ func (r *ActionManager) createJob(ctx context.Context, act *ritualsv1.Action, ns
 	}
 
 	act.Status.JobName = job.GetName()
-	act.Status.Phase = ritualsv1.ActionPhasePending
+	act.Status.Phase = adeptv1.ActionPhasePending
 	return r.updateStatus(ctx, act)
 }
 
@@ -188,7 +188,7 @@ func (r *ActionManager) createJob(ctx context.Context, act *ritualsv1.Action, ns
 // and removes the finalizer. An already-gone Job is not an error, and neither
 // is a claim or namespace that is already deleted — the Job's namespace is
 // torn down with them, and the finalizer must not wedge the Action forever.
-func (r *ActionManager) finalize(ctx context.Context, act *ritualsv1.Action) error {
+func (r *ActionManager) finalize(ctx context.Context, act *adeptv1.Action) error {
 	log := r.Log.WithValues("action", client.ObjectKeyFromObject(act))
 
 	if act.Status.JobName != "" {
@@ -219,7 +219,7 @@ func (r *ActionManager) finalize(ctx context.Context, act *ritualsv1.Action) err
 
 // trackJob maps the Action's Job status onto the Action phase. A deleted Job
 // leaves the phase unchanged; the status is written only when the phase moves.
-func (r *ActionManager) trackJob(ctx context.Context, act *ritualsv1.Action, ns string) error {
+func (r *ActionManager) trackJob(ctx context.Context, act *adeptv1.Action, ns string) error {
 	log := r.Log.WithValues("action", client.ObjectKeyFromObject(act), "job", act.Status.JobName, "instanceNamespace", ns)
 
 	job := &batchv1.Job{
@@ -243,11 +243,11 @@ func (r *ActionManager) trackJob(ctx context.Context, act *ritualsv1.Action, ns 
 	phase := act.Status.Phase
 	switch {
 	case jobFailed(job):
-		phase = ritualsv1.ActionPhaseFailed
+		phase = adeptv1.ActionPhaseFailed
 	case job.Status.Succeeded > 0:
-		phase = ritualsv1.ActionPhaseSucceeded
+		phase = adeptv1.ActionPhaseSucceeded
 	case job.Status.Active > 0:
-		phase = ritualsv1.ActionPhaseRunning
+		phase = adeptv1.ActionPhaseRunning
 	}
 	if phase == act.Status.Phase {
 		return nil
@@ -266,7 +266,7 @@ func jobFailed(job *batchv1.Job) bool {
 	return false
 }
 
-func (r *ActionManager) updateStatus(ctx context.Context, act *ritualsv1.Action) error {
+func (r *ActionManager) updateStatus(ctx context.Context, act *adeptv1.Action) error {
 	if err := r.Status().Update(ctx, act); err != nil {
 		return fmt.Errorf("updating action status: %w", err)
 	}
@@ -275,7 +275,7 @@ func (r *ActionManager) updateStatus(ctx context.Context, act *ritualsv1.Action)
 
 // jobName returns "<action-name>-<spec.type>" clamped to the Kubernetes name
 // limit.
-func jobName(action *ritualsv1.Action) string {
+func jobName(action *adeptv1.Action) string {
 	return clampName(fmt.Sprintf("%s-%s", action.Name, action.Spec.Type))
 }
 
@@ -294,7 +294,7 @@ func clampName(name string) string {
 func (r *ActionManager) SetupWithManager(name string, mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		Named(name).
-		For(&ritualsv1.Action{}).
+		For(&adeptv1.Action{}).
 		Watches(&batchv1.Job{}, handler.EnqueueRequestsFromMapFunc(JobMapFunc)).
 		Complete(r)
 }
@@ -314,10 +314,10 @@ func JobMapFunc(ctx context.Context, o client.Object) []ctrl.Request {
 // live in.
 // We probe if the ritual definition is in the current namespace, if so, we assusme
 // that we're in the instance namespace. If not, we resolve the claim namespace and return that value.
-func (r *ActionManager) instanceNamespace(ctx context.Context, act *ritualsv1.Action) (string, error) {
+func (r *ActionManager) instanceNamespace(ctx context.Context, act *adeptv1.Action) (string, error) {
 	instanceNs := act.GetNamespace()
 
-	def := &ritualsv1.Definition{}
+	def := &adeptv1.Definition{}
 
 	objectKey := client.ObjectKey{Name: act.Spec.Type, Namespace: act.GetNamespace()}
 

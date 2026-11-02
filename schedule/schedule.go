@@ -35,7 +35,7 @@ import (
 
 	"github.com/robfig/cron/v3"
 
-	ritualsv1 "github.com/helmetica-framework/adept/api/v1"
+	adeptv1 "github.com/helmetica-framework/adept/api/v1"
 )
 
 const (
@@ -53,14 +53,14 @@ const (
 
 // Weekdays provided by the time package, already map cleanly to cron.
 // Sunday = 0, Saturday = 6
-var weekdays = map[ritualsv1.Day]time.Weekday{
-	ritualsv1.Sunday:    time.Sunday,
-	ritualsv1.Monday:    time.Monday,
-	ritualsv1.Tuesday:   time.Tuesday,
-	ritualsv1.Wednesday: time.Wednesday,
-	ritualsv1.Thursday:  time.Thursday,
-	ritualsv1.Friday:    time.Friday,
-	ritualsv1.Saturday:  time.Saturday,
+var weekdays = map[adeptv1.Day]time.Weekday{
+	adeptv1.Sunday:    time.Sunday,
+	adeptv1.Monday:    time.Monday,
+	adeptv1.Tuesday:   time.Tuesday,
+	adeptv1.Wednesday: time.Wednesday,
+	adeptv1.Thursday:  time.Thursday,
+	adeptv1.Friday:    time.Friday,
+	adeptv1.Saturday:  time.Saturday,
 }
 
 // Validate reports whether spec is resolvable: days that are known and not
@@ -70,7 +70,7 @@ var weekdays = map[ritualsv1.Day]time.Weekday{
 // This is the single definition of what a valid window is. The CRD schema
 // declares the type's shape and little else, so the API server will happily
 // store a window this rejects. Check before relying on one.
-func Validate(spec ritualsv1.MaintenanceWindowSpec) error {
+func Validate(spec adeptv1.MaintenanceWindowSpec) error {
 	if _, err := time.LoadLocation(spec.TimeZone); err != nil {
 		return fmt.Errorf("time zone %q: %w", spec.TimeZone, err)
 	}
@@ -79,7 +79,7 @@ func Validate(spec ritualsv1.MaintenanceWindowSpec) error {
 		return fmt.Errorf("daysOfWeek must name at least one day")
 	}
 
-	seen := make(map[ritualsv1.Day]bool, len(spec.DaysOfWeek))
+	seen := make(map[adeptv1.Day]bool, len(spec.DaysOfWeek))
 	for _, day := range spec.DaysOfWeek {
 		if _, ok := weekdays[day]; !ok {
 			return fmt.Errorf("unknown day %q", day)
@@ -109,7 +109,7 @@ func Validate(spec ritualsv1.MaintenanceWindowSpec) error {
 // It must stay stable across process restarts and adept upgrades: changing how
 // it is derived moves every instance in every cluster to a different minute.
 // The tests pin it with golden values for that reason.
-func Offset(spec ritualsv1.MaintenanceWindowSpec, identity string) time.Duration {
+func Offset(spec adeptv1.MaintenanceWindowSpec, identity string) time.Duration {
 	oh := fnv.New64a()
 	oh.Write([]byte(identity))
 	sum := oh.Sum64()
@@ -125,7 +125,7 @@ func Offset(spec ritualsv1.MaintenanceWindowSpec, identity string) time.Duration
 // CronSchedule renders identity's window start as a Kubernetes CronJob
 // schedule and time zone, ready for CronJob.spec.schedule and
 // CronJob.spec.timeZone.
-func CronSchedule(spec ritualsv1.MaintenanceWindowSpec, identity string) (schedule, timeZone string, err error) {
+func CronSchedule(spec adeptv1.MaintenanceWindowSpec, identity string) (schedule, timeZone string, err error) {
 	if err := Validate(spec); err != nil {
 		return "", "", err
 	}
@@ -172,7 +172,7 @@ func CronSchedule(spec ritualsv1.MaintenanceWindowSpec, identity string) (schedu
 //
 // Strictly after, so that a caller waking at its own start time computes the
 // following occurrence rather than the one it just handled.
-func NextRun(spec ritualsv1.MaintenanceWindowSpec, identity string, now time.Time) (time.Time, error) {
+func NextRun(spec adeptv1.MaintenanceWindowSpec, identity string, now time.Time) (time.Time, error) {
 	parsed, err := parse(spec, identity)
 	if err != nil {
 		return time.Time{}, err
@@ -183,7 +183,7 @@ func NextRun(spec ritualsv1.MaintenanceWindowSpec, identity string, now time.Tim
 
 // parse renders identity's schedule and hands it to the same cron parser
 // Kubernetes runs the CronJob on.
-func parse(spec ritualsv1.MaintenanceWindowSpec, identity string) (cron.Schedule, error) {
+func parse(spec adeptv1.MaintenanceWindowSpec, identity string) (cron.Schedule, error) {
 	cronSpec, tz, err := CronSchedule(spec, identity)
 	if err != nil {
 		return nil, fmt.Errorf("generating cron schedule: %w", err)
@@ -206,7 +206,7 @@ func parse(spec ritualsv1.MaintenanceWindowSpec, identity string) (cron.Schedule
 // A now that already sits between the bump and the start takes the following
 // occurrence. Missing a bump leaves the instance as it is for another window,
 // which is the safe direction: it never acts outside one.
-func NextBump(spec ritualsv1.MaintenanceWindowSpec, identity string, now time.Time) (time.Time, error) {
+func NextBump(spec adeptv1.MaintenanceWindowSpec, identity string, now time.Time) (time.Time, error) {
 	lead := min(BumpLead, Offset(spec, identity))
 
 	run, err := NextRun(spec, identity, now)
@@ -230,7 +230,7 @@ func NextBump(spec ritualsv1.MaintenanceWindowSpec, identity string, now time.Ti
 // PrevRun returns the most recent moment at or before now at which identity's
 // maintenance started. A window names at least one weekday, so an occurrence
 // always exists within the week before now.
-func PrevRun(spec ritualsv1.MaintenanceWindowSpec, identity string, now time.Time) (time.Time, error) {
+func PrevRun(spec adeptv1.MaintenanceWindowSpec, identity string, now time.Time) (time.Time, error) {
 	parsed, err := parse(spec, identity)
 	if err != nil {
 		return time.Time{}, err
@@ -262,7 +262,7 @@ func PrevRun(spec ritualsv1.MaintenanceWindowSpec, identity string, now time.Tim
 // against a recorded occurrence is what makes this safe where a plain "is it
 // the lead right now" check is not: an instance whose offset is zero has a
 // zero-length lead and would never match one.
-func BumpDue(spec ritualsv1.MaintenanceWindowSpec, identity string, now time.Time) (occurrence time.Time, open bool, err error) {
+func BumpDue(spec adeptv1.MaintenanceWindowSpec, identity string, now time.Time) (occurrence time.Time, open bool, err error) {
 	next, err := NextRun(spec, identity, now)
 	if err != nil {
 		return time.Time{}, false, fmt.Errorf("getting next run: %w", err)

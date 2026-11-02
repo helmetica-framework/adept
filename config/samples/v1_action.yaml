@@ -1,4 +1,4 @@
-apiVersion: rituals.helmetica.io/v1
+apiVersion: adept.helmetica.io/v1
 kind: Action
 metadata:
   name: restart-now

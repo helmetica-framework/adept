@@ -8,12 +8,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
-	ritualsv1 "github.com/helmetica-framework/adept/api/v1"
+	adeptv1 "github.com/helmetica-framework/adept/api/v1"
 	"github.com/helmetica-framework/adept/schedule"
 )
 
-// +kubebuilder:webhook:path=/validate-rituals-helmetica-io-v1-maintenancewindow,mutating=false,failurePolicy=fail,sideEffects=None,groups=rituals.helmetica.io,resources=maintenancewindows,verbs=create;update,versions=v1,name=vmaintenancewindow.rituals.helmetica.io,admissionReviewVersions=v1
-// +kubebuilder:rbac:groups=rituals.helmetica.io,resources=maintenancewindows,verbs=get;list;watch
+// +kubebuilder:webhook:path=/validate-adept-helmetica-io-v1-maintenancewindow,mutating=false,failurePolicy=fail,sideEffects=None,groups=adept.helmetica.io,resources=maintenancewindows,verbs=create;update,versions=v1,name=vmaintenancewindow.adept.helmetica.io,admissionReviewVersions=v1
+// +kubebuilder:rbac:groups=adept.helmetica.io,resources=maintenancewindows,verbs=get;list;watch
 
 // MaintenanceWindowValidator rejects windows the schedule package cannot use,
 // and windows claiming a default another window already holds. The uniqueness
@@ -23,11 +23,11 @@ type MaintenanceWindowValidator struct {
 	client.Client
 }
 
-var _ admission.Validator[*ritualsv1.MaintenanceWindow] = &MaintenanceWindowValidator{}
+var _ admission.Validator[*adeptv1.MaintenanceWindow] = &MaintenanceWindowValidator{}
 
 // ValidateCreate admits a window that is usable and does not claim a default
 // another window holds.
-func (v *MaintenanceWindowValidator) ValidateCreate(ctx context.Context, window *ritualsv1.MaintenanceWindow) (admission.Warnings, error) {
+func (v *MaintenanceWindowValidator) ValidateCreate(ctx context.Context, window *adeptv1.MaintenanceWindow) (admission.Warnings, error) {
 	if err := schedule.Validate(window.Spec); err != nil {
 		return nil, err
 	}
@@ -37,7 +37,7 @@ func (v *MaintenanceWindowValidator) ValidateCreate(ctx context.Context, window 
 
 // ValidateUpdate judges the window being written, not the one it replaces, so
 // an edit that repairs a stored window is admitted.
-func (v *MaintenanceWindowValidator) ValidateUpdate(ctx context.Context, _, window *ritualsv1.MaintenanceWindow) (admission.Warnings, error) {
+func (v *MaintenanceWindowValidator) ValidateUpdate(ctx context.Context, _, window *adeptv1.MaintenanceWindow) (admission.Warnings, error) {
 	if err := schedule.Validate(window.Spec); err != nil {
 		return nil, err
 	}
@@ -47,12 +47,12 @@ func (v *MaintenanceWindowValidator) ValidateUpdate(ctx context.Context, _, wind
 
 // rejectSecondDefault refuses a window claiming spec.default while another one
 // holds it, naming the holder. If default is false, the list is skipped.
-func (v *MaintenanceWindowValidator) rejectSecondDefault(ctx context.Context, mw *ritualsv1.MaintenanceWindow) error {
+func (v *MaintenanceWindowValidator) rejectSecondDefault(ctx context.Context, mw *adeptv1.MaintenanceWindow) error {
 	if !mw.Spec.Default {
 		return nil
 	}
 
-	list := &ritualsv1.MaintenanceWindowList{}
+	list := &adeptv1.MaintenanceWindowList{}
 
 	err := v.List(ctx, list)
 	if err != nil {
@@ -69,13 +69,13 @@ func (v *MaintenanceWindowValidator) rejectSecondDefault(ctx context.Context, mw
 }
 
 // ValidateDelete is required by the interface but not really applicable.
-func (v *MaintenanceWindowValidator) ValidateDelete(_ context.Context, _ *ritualsv1.MaintenanceWindow) (admission.Warnings, error) {
+func (v *MaintenanceWindowValidator) ValidateDelete(_ context.Context, _ *adeptv1.MaintenanceWindow) (admission.Warnings, error) {
 	return nil, nil
 }
 
 // SetupWithManager registers the validator on the manager's webhook server.
 func (v *MaintenanceWindowValidator) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewWebhookManagedBy(mgr, &ritualsv1.MaintenanceWindow{}).
+	return ctrl.NewWebhookManagedBy(mgr, &adeptv1.MaintenanceWindow{}).
 		WithValidator(v).
 		Complete()
 }

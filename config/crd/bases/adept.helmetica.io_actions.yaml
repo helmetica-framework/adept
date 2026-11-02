@@ -4,9 +4,9 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.21.0
-  name: actions.rituals.helmetica.io
+  name: actions.adept.helmetica.io
 spec:
-  group: rituals.helmetica.io
+  group: adept.helmetica.io
   names:
     kind: Action
     listKind: ActionList

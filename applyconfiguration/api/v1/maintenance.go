@@ -31,7 +31,7 @@ func Maintenance(name, namespace string) *MaintenanceApplyConfiguration {
 	b.WithName(name)
 	b.WithNamespace(namespace)
 	b.WithKind("Maintenance")
-	b.WithAPIVersion("rituals.helmetica.io/v1")
+	b.WithAPIVersion("adept.helmetica.io/v1")
 	return b
 }
 
@@ -52,7 +52,7 @@ func ExtractMaintenanceFrom(maintenance *apiv1.Maintenance, fieldManager string,
 	b.WithNamespace(maintenance.Namespace)
 
 	b.WithKind("Maintenance")
-	b.WithAPIVersion("rituals.helmetica.io/v1")
+	b.WithAPIVersion("adept.helmetica.io/v1")
 	return b, nil
 }
 

@@ -11,7 +11,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	ritualsv1 "github.com/helmetica-framework/adept/api/v1"
+	adeptv1 "github.com/helmetica-framework/adept/api/v1"
 )
 
 // These tests cover the wiring, not the rules. What counts as a valid window
@@ -19,11 +19,11 @@ import (
 // package; duplicating the table here would mean two places to update every
 // time a rule changes.
 
-func maintenanceWindow() *ritualsv1.MaintenanceWindow {
-	return &ritualsv1.MaintenanceWindow{
+func maintenanceWindow() *adeptv1.MaintenanceWindow {
+	return &adeptv1.MaintenanceWindow{
 		ObjectMeta: metav1.ObjectMeta{Name: "sunday-night"},
-		Spec: ritualsv1.MaintenanceWindowSpec{
-			DaysOfWeek: []ritualsv1.Day{ritualsv1.Sunday},
+		Spec: adeptv1.MaintenanceWindowSpec{
+			DaysOfWeek: []adeptv1.Day{adeptv1.Sunday},
 			Time:       "22:00",
 			Duration:   metav1.Duration{Duration: 6 * time.Hour},
 			TimeZone:   "Europe/Zurich",
@@ -41,7 +41,7 @@ func windowValidator(objs ...client.Object) *MaintenanceWindowValidator {
 	}
 }
 
-func defaultWindow(name string) *ritualsv1.MaintenanceWindow {
+func defaultWindow(name string) *adeptv1.MaintenanceWindow {
 	return namedWindow(name, true)
 }
 

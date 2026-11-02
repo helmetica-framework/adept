@@ -11,13 +11,13 @@ import (
 	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	ritualsv1 "github.com/helmetica-framework/adept/api/v1"
+	adeptv1 "github.com/helmetica-framework/adept/api/v1"
 	"github.com/helmetica-framework/adept/schedule"
 )
 
 // window is a six hour span opening at 22:00, in the given zone.
-func window(tz string, days ...ritualsv1.Day) ritualsv1.MaintenanceWindowSpec {
-	return ritualsv1.MaintenanceWindowSpec{
+func window(tz string, days ...adeptv1.Day) adeptv1.MaintenanceWindowSpec {
+	return adeptv1.MaintenanceWindowSpec{
 		DaysOfWeek: days,
 		Time:       "22:00",
 		Duration:   metav1.Duration{Duration: 6 * time.Hour},
@@ -44,35 +44,35 @@ func TestValidate_AcceptsAWellFormedWindow(t *testing.T) {
 func TestValidate_RejectsMalformedSpecs(t *testing.T) {
 	tests := []struct {
 		name string
-		mut  func(*ritualsv1.MaintenanceWindowSpec)
+		mut  func(*adeptv1.MaintenanceWindowSpec)
 	}{
-		{"no days", func(s *ritualsv1.MaintenanceWindowSpec) { s.DaysOfWeek = nil }},
-		{"unknown day", func(s *ritualsv1.MaintenanceWindowSpec) {
-			s.DaysOfWeek = []ritualsv1.Day{"caturday"}
+		{"no days", func(s *adeptv1.MaintenanceWindowSpec) { s.DaysOfWeek = nil }},
+		{"unknown day", func(s *adeptv1.MaintenanceWindowSpec) {
+			s.DaysOfWeek = []adeptv1.Day{"caturday"}
 		}},
-		{"unknown day alongside a valid one", func(s *ritualsv1.MaintenanceWindowSpec) {
+		{"unknown day alongside a valid one", func(s *adeptv1.MaintenanceWindowSpec) {
 			// Rejecting this needs every day checked, not just one match.
-			s.DaysOfWeek = []ritualsv1.Day{"sunday", "caturday"}
+			s.DaysOfWeek = []adeptv1.Day{"sunday", "caturday"}
 		}},
-		{"duplicate days", func(s *ritualsv1.MaintenanceWindowSpec) {
-			s.DaysOfWeek = []ritualsv1.Day{"sunday", "sunday"}
+		{"duplicate days", func(s *adeptv1.MaintenanceWindowSpec) {
+			s.DaysOfWeek = []adeptv1.Day{"sunday", "sunday"}
 		}},
-		{"time out of range", func(s *ritualsv1.MaintenanceWindowSpec) { s.Time = "25:00" }},
-		{"time not HH:MM", func(s *ritualsv1.MaintenanceWindowSpec) { s.Time = "10pm" }},
-		{"empty time", func(s *ritualsv1.MaintenanceWindowSpec) { s.Time = "" }},
-		{"zero duration", func(s *ritualsv1.MaintenanceWindowSpec) {
+		{"time out of range", func(s *adeptv1.MaintenanceWindowSpec) { s.Time = "25:00" }},
+		{"time not HH:MM", func(s *adeptv1.MaintenanceWindowSpec) { s.Time = "10pm" }},
+		{"empty time", func(s *adeptv1.MaintenanceWindowSpec) { s.Time = "" }},
+		{"zero duration", func(s *adeptv1.MaintenanceWindowSpec) {
 			s.Duration = metav1.Duration{}
 		}},
-		{"negative duration", func(s *ritualsv1.MaintenanceWindowSpec) {
+		{"negative duration", func(s *adeptv1.MaintenanceWindowSpec) {
 			s.Duration = metav1.Duration{Duration: -time.Hour}
 		}},
-		{"duration below the floor", func(s *ritualsv1.MaintenanceWindowSpec) {
+		{"duration below the floor", func(s *adeptv1.MaintenanceWindowSpec) {
 			s.Duration = metav1.Duration{Duration: 30 * time.Minute}
 		}},
-		{"duration above the ceiling", func(s *ritualsv1.MaintenanceWindowSpec) {
+		{"duration above the ceiling", func(s *adeptv1.MaintenanceWindowSpec) {
 			s.Duration = metav1.Duration{Duration: 25 * time.Hour}
 		}},
-		{"unknown time zone", func(s *ritualsv1.MaintenanceWindowSpec) {
+		{"unknown time zone", func(s *adeptv1.MaintenanceWindowSpec) {
 			s.TimeZone = "Europe/Zurizh"
 		}},
 	}
@@ -100,25 +100,25 @@ func TestValidate_AcceptsTheDurationBounds(t *testing.T) {
 func TestCronSchedule(t *testing.T) {
 	tests := []struct {
 		name         string
-		days         []ritualsv1.Day
+		days         []adeptv1.Day
 		time         string
 		wantSchedule string
 	}{
 		{
 			name:         "single day, no midnight crossing",
-			days:         []ritualsv1.Day{"sunday"},
+			days:         []adeptv1.Day{"sunday"},
 			time:         "22:00",
 			wantSchedule: "19 23 * * 0", // 22:00 + db-prod's 1h19m offset
 		},
 		{
 			name:         "a multi-day window",
-			days:         []ritualsv1.Day{"sunday", "monday", "tuesday", "wednesday", "thursday"},
+			days:         []adeptv1.Day{"sunday", "monday", "tuesday", "wednesday", "thursday"},
 			time:         "22:00",
 			wantSchedule: "19 23 * * 0,1,2,3,4",
 		},
 		{
 			name: "offset crosses midnight and shifts the day",
-			days: []ritualsv1.Day{"sunday"},
+			days: []adeptv1.Day{"sunday"},
 			time: "23:00",
 			// 23:00 + 1h19m is Monday 00:19, not Sunday. Emitting
 			// "19 23 * * 0" here would run every instance a day early.
@@ -126,13 +126,13 @@ func TestCronSchedule(t *testing.T) {
 		},
 		{
 			name:         "saturday wraps around to sunday",
-			days:         []ritualsv1.Day{"saturday"},
+			days:         []adeptv1.Day{"saturday"},
 			time:         "23:00",
 			wantSchedule: "19 0 * * 0",
 		},
 		{
 			name: "day order in the spec does not change the output",
-			days: []ritualsv1.Day{"thursday", "sunday", "tuesday"},
+			days: []adeptv1.Day{"thursday", "sunday", "tuesday"},
 			time: "22:00",
 			// Unsorted output would rewrite the CronJob on every reconcile.
 			wantSchedule: "19 23 * * 0,2,4",
@@ -268,21 +268,21 @@ func TestNextRun(t *testing.T) {
 
 	tests := []struct {
 		name  string
-		days  []ritualsv1.Day
+		days  []adeptv1.Day
 		start string
 		now   time.Time
 		want  time.Time
 	}{
 		{
 			name:  "later the same day",
-			days:  []ritualsv1.Day{"sunday"},
+			days:  []adeptv1.Day{"sunday"},
 			start: "22:00",
 			now:   time.Date(2026, 9, 13, 12, 0, 0, 0, loc),
 			want:  time.Date(2026, 9, 13, 23, 19, 0, 0, loc),
 		},
 		{
 			name:  "standing on the start time takes the next one",
-			days:  []ritualsv1.Day{"sunday"},
+			days:  []adeptv1.Day{"sunday"},
 			start: "22:00",
 			// Inclusive here would requeue with no delay and spin.
 			now:  time.Date(2026, 9, 13, 23, 19, 0, 0, loc),
@@ -290,28 +290,28 @@ func TestNextRun(t *testing.T) {
 		},
 		{
 			name:  "midweek waits for the next listed day",
-			days:  []ritualsv1.Day{"sunday"},
+			days:  []adeptv1.Day{"sunday"},
 			start: "22:00",
 			now:   time.Date(2026, 9, 16, 9, 0, 0, 0, loc),
 			want:  time.Date(2026, 9, 20, 23, 19, 0, 0, loc),
 		},
 		{
 			name:  "an offset past midnight lands on the following day",
-			days:  []ritualsv1.Day{"sunday"},
+			days:  []adeptv1.Day{"sunday"},
 			start: "23:00",
 			now:   time.Date(2026, 9, 13, 23, 30, 0, 0, loc),
 			want:  time.Date(2026, 9, 14, 0, 19, 0, 0, loc),
 		},
 		{
 			name:  "a multi-day window takes the nearest day",
-			days:  []ritualsv1.Day{"sunday", "monday", "tuesday", "wednesday", "thursday"},
+			days:  []adeptv1.Day{"sunday", "monday", "tuesday", "wednesday", "thursday"},
 			start: "22:00",
 			now:   time.Date(2026, 9, 14, 12, 0, 0, 0, loc),
 			want:  time.Date(2026, 9, 14, 23, 19, 0, 0, loc),
 		},
 		{
 			name:  "now in another zone is still judged in the window's",
-			days:  []ritualsv1.Day{"sunday"},
+			days:  []adeptv1.Day{"sunday"},
 			start: "22:00",
 			// 21:00 UTC is 23:00 in Zurich, so the 23:19 start is still ahead.
 			now:  time.Date(2026, 9, 13, 21, 0, 0, 0, time.UTC),
@@ -337,7 +337,7 @@ func TestNextRun_AgreesWithTheCronExpression(t *testing.T) {
 	loc := zurich(t)
 	now := time.Date(2026, 9, 16, 9, 0, 0, 0, loc)
 
-	daySets := [][]ritualsv1.Day{
+	daySets := [][]adeptv1.Day{
 		{"sunday"},
 		{"saturday"},
 		{"sunday", "monday", "tuesday", "wednesday", "thursday"},

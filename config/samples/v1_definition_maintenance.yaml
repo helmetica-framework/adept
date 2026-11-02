@@ -1,6 +1,6 @@
 # The ritual a Maintenance runs by default. Reagents ship their own; this one
 # stands in for it so the samples produce a CronJob on their own.
-apiVersion: rituals.helmetica.io/v1
+apiVersion: adept.helmetica.io/v1
 kind: Definition
 metadata:
   name: maintenance

@@ -4,7 +4,7 @@
 # ships. spec.window could be left out too if a MaintenanceWindow in the cluster
 # were marked spec.default, but the sample names one so it works whatever the
 # cluster already has.
-apiVersion: rituals.helmetica.io/v1
+apiVersion: adept.helmetica.io/v1
 kind: Maintenance
 metadata:
   name: my-service
