@@ -17,11 +17,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	ritualsv1 "github.com/helmetica-framework/adept/api/v1"
+	adeptv1 "github.com/helmetica-framework/adept/api/v1"
 	"github.com/helmetica-framework/adept/schedule"
 )
 
-func namedWindow(name string, isDefault bool) *ritualsv1.MaintenanceWindow {
+func namedWindow(name string, isDefault bool) *adeptv1.MaintenanceWindow {
 	w := maintenanceWindow()
 	w.Name = name
 	w.Spec.Default = isDefault
@@ -30,17 +30,17 @@ func namedWindow(name string, isDefault bool) *ritualsv1.MaintenanceWindow {
 
 // maintenance lives in "svc"; "svc/maintenance" is its spread
 // identity.
-func maintenance(windowName string) *ritualsv1.Maintenance {
-	return &ritualsv1.Maintenance{
+func maintenance(windowName string) *adeptv1.Maintenance {
+	return &adeptv1.Maintenance{
 		ObjectMeta: metav1.ObjectMeta{Name: "maintenance", Namespace: "svc"},
-		Spec: ritualsv1.MaintenanceSpec{
+		Spec: adeptv1.MaintenanceSpec{
 			Window: windowName,
 			Ritual: "maintenance",
 		},
 	}
 }
 
-func maintenanceRitual(ns string) *ritualsv1.Definition {
+func maintenanceRitual(ns string) *adeptv1.Definition {
 	d := definition(ns)
 	d.Name = "maintenance"
 	return d
@@ -50,7 +50,7 @@ func maintenanceManager(objs ...client.Object) (*MaintenanceManager, client.Clie
 	scheme := newTestScheme()
 	c := fake.NewClientBuilder().
 		WithScheme(scheme).
-		WithStatusSubresource(&ritualsv1.Maintenance{}).
+		WithStatusSubresource(&adeptv1.Maintenance{}).
 		WithObjects(objs...).
 		Build()
 	rec := events.NewFakeRecorder(8)
@@ -75,9 +75,9 @@ func getCronJob(t *testing.T, c client.Client) *batchv1.CronJob {
 	return &list.Items[0]
 }
 
-func getMaintenance(t *testing.T, c client.Client) *ritualsv1.Maintenance {
+func getMaintenance(t *testing.T, c client.Client) *adeptv1.Maintenance {
 	t.Helper()
-	got := &ritualsv1.Maintenance{}
+	got := &adeptv1.Maintenance{}
 	require.NoError(t, c.Get(context.Background(),
 		types.NamespacedName{Name: "maintenance", Namespace: "svc"}, got))
 	return got
@@ -215,7 +215,7 @@ func TestMaintenance_RewritesTheScheduleWhenTheWindowChanges(t *testing.T) {
 	require.NoError(t, err)
 	before := getCronJob(t, c).Spec.Schedule
 
-	moved := &ritualsv1.MaintenanceWindow{}
+	moved := &adeptv1.MaintenanceWindow{}
 	require.NoError(t, c.Get(context.Background(), types.NamespacedName{Name: "sunday-night"}, moved))
 	moved.Spec.Time = "02:00"
 	require.NoError(t, c.Update(context.Background(), moved))

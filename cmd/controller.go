@@ -29,7 +29,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	//+kubebuilder:scaffold:imports
-	ritualsv1 "github.com/helmetica-framework/adept/api/v1"
+	adeptv1 "github.com/helmetica-framework/adept/api/v1"
 	"github.com/helmetica-framework/adept/controllers"
 )
 
@@ -82,7 +82,7 @@ var controllerCmd = &cobra.Command{
 
 func newScheme() *runtime.Scheme {
 	scheme := runtime.NewScheme()
-	utilruntime.Must(ritualsv1.AddToScheme(scheme))
+	utilruntime.Must(adeptv1.AddToScheme(scheme))
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(apiextv1.AddToScheme(scheme))
 	//+kubebuilder:scaffold:scheme
@@ -179,7 +179,7 @@ func runController(cmd *cobra.Command, _ []string) error {
 		WebhookServer:          webhook.NewServer(webhook.Options{TLSOpts: webhookTLSOpts}),
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
-		LeaderElectionID:       "adept.rituals.helmetica.io",
+		LeaderElectionID:       "adept.helmetica.io",
 
 		Cache: cache.Options{
 			ByObject: map[client.Object]cache.ByObject{

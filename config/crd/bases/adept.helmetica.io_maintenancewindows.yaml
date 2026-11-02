@@ -4,9 +4,9 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.21.0
-  name: maintenancewindows.rituals.helmetica.io
+  name: maintenancewindows.adept.helmetica.io
 spec:
-  group: rituals.helmetica.io
+  group: adept.helmetica.io
   names:
     kind: MaintenanceWindow
     listKind: MaintenanceWindowList

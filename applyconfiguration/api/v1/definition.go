@@ -28,7 +28,7 @@ func Definition(name, namespace string) *DefinitionApplyConfiguration {
 	b.WithName(name)
 	b.WithNamespace(namespace)
 	b.WithKind("Definition")
-	b.WithAPIVersion("rituals.helmetica.io/v1")
+	b.WithAPIVersion("adept.helmetica.io/v1")
 	return b
 }
 
@@ -49,7 +49,7 @@ func ExtractDefinitionFrom(definition *apiv1.Definition, fieldManager string, su
 	b.WithNamespace(definition.Namespace)
 
 	b.WithKind("Definition")
-	b.WithAPIVersion("rituals.helmetica.io/v1")
+	b.WithAPIVersion("adept.helmetica.io/v1")
 	return b, nil
 }
 

@@ -13,7 +13,7 @@ import (
 	apiextv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	k8syaml "k8s.io/apimachinery/pkg/util/yaml"
 
-	ritualsv1 "github.com/helmetica-framework/adept/api/v1"
+	adeptv1 "github.com/helmetica-framework/adept/api/v1"
 	"github.com/helmetica-framework/adept/schedule"
 )
 
@@ -42,10 +42,10 @@ func TestSamplesAreWiredIntoKustomization(t *testing.T) {
 }
 
 func TestSampleMaintenanceWindowIsValid(t *testing.T) {
-	w := readSample[ritualsv1.MaintenanceWindow](t, "v1_maintenancewindow.yaml")
+	w := readSample[adeptv1.MaintenanceWindow](t, "v1_maintenancewindow.yaml")
 
 	assert.Equal(t, "MaintenanceWindow", w.Kind)
-	assert.Equal(t, ritualsv1.GroupVersion.String(), w.APIVersion)
+	assert.Equal(t, adeptv1.GroupVersion.String(), w.APIVersion)
 	assert.NotEmpty(t, w.Name)
 	assert.Empty(t, w.Namespace, "MaintenanceWindow is cluster-scoped")
 
@@ -56,7 +56,7 @@ func TestSampleMaintenanceWindowIsValid(t *testing.T) {
 func TestSampleMaintenanceWindowRendersASchedule(t *testing.T) {
 	// The sample is the worked example an operator copies, so it should be
 	// something that actually produces a CronJob rather than merely parsing.
-	w := readSample[ritualsv1.MaintenanceWindow](t, "v1_maintenancewindow.yaml")
+	w := readSample[adeptv1.MaintenanceWindow](t, "v1_maintenancewindow.yaml")
 
 	cron, tz, err := schedule.CronSchedule(w.Spec, "db-instance")
 	require.NoError(t, err)
@@ -68,10 +68,10 @@ func TestSampleMaintenanceWindowRendersASchedule(t *testing.T) {
 }
 
 func TestSampleMaintenanceIsValid(t *testing.T) {
-	md := readSample[ritualsv1.Maintenance](t, "v1_maintenance.yaml")
+	md := readSample[adeptv1.Maintenance](t, "v1_maintenance.yaml")
 
 	assert.Equal(t, "Maintenance", md.Kind)
-	assert.Equal(t, ritualsv1.GroupVersion.String(), md.APIVersion)
+	assert.Equal(t, adeptv1.GroupVersion.String(), md.APIVersion)
 	assert.NotEmpty(t, md.Name)
 	assert.Empty(t, md.Spec.Ritual,
 		"left unset so the sample shows an empty spec being a complete schedule")
@@ -80,8 +80,8 @@ func TestSampleMaintenanceIsValid(t *testing.T) {
 func TestSampleMaintenanceNamesAWindowThatExists(t *testing.T) {
 	// Naming a window nothing defines is the one way this sample can be applied
 	// and still resolve to nothing.
-	md := readSample[ritualsv1.Maintenance](t, "v1_maintenance.yaml")
-	w := readSample[ritualsv1.MaintenanceWindow](t, "v1_maintenancewindow.yaml")
+	md := readSample[adeptv1.Maintenance](t, "v1_maintenance.yaml")
+	w := readSample[adeptv1.MaintenanceWindow](t, "v1_maintenancewindow.yaml")
 
 	assert.Equal(t, w.Name, md.Spec.Window)
 }
@@ -97,7 +97,7 @@ func TestSampleMaintenanceResolvesToAShippedRitual(t *testing.T) {
 	entries, err := filepath.Glob(filepath.Join(samplesDir, "v1_definition*.yaml"))
 	require.NoError(t, err)
 	for _, entry := range entries {
-		names = append(names, readSample[ritualsv1.Definition](t, filepath.Base(entry)).Name)
+		names = append(names, readSample[adeptv1.Definition](t, filepath.Base(entry)).Name)
 	}
 
 	assert.Contains(t, names, ritual, "no sample Definition is named %q", ritual)
@@ -108,7 +108,7 @@ func TestSampleMaintenanceResolvesToAShippedRitual(t *testing.T) {
 func maintenanceRitualDefault(t *testing.T) string {
 	t.Helper()
 
-	raw, err := os.ReadFile("config/crd/bases/rituals.helmetica.io_maintenances.yaml")
+	raw, err := os.ReadFile("config/crd/bases/adept.helmetica.io_maintenances.yaml")
 	require.NoError(t, err)
 
 	var crd apiextv1.CustomResourceDefinition
@@ -128,11 +128,11 @@ func maintenanceRitualDefault(t *testing.T) string {
 func TestSampleDefinitionAndActionStillParse(t *testing.T) {
 	// The existing samples predate these tests. Included so the guard covers
 	// every sample rather than only the new one.
-	def := readSample[ritualsv1.Definition](t, "v1_definition.yaml")
+	def := readSample[adeptv1.Definition](t, "v1_definition.yaml")
 	assert.Equal(t, "Definition", def.Kind)
 	assert.NotEmpty(t, def.Spec.JobTemplate.Spec.Template.Spec.Containers)
 
-	act := readSample[ritualsv1.Action](t, "v1_action.yaml")
+	act := readSample[adeptv1.Action](t, "v1_action.yaml")
 	assert.Equal(t, "Action", act.Kind)
 	assert.NotEmpty(t, act.Spec.Type)
 }

@@ -4,9 +4,9 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.21.0
-  name: maintenances.rituals.helmetica.io
+  name: maintenances.adept.helmetica.io
 spec:
-  group: rituals.helmetica.io
+  group: adept.helmetica.io
   names:
     kind: Maintenance
     listKind: MaintenanceList
@@ -88,7 +88,7 @@ spec:
               observedBumpRequest:
                 description: |-
                   ObservedBumpRequest is the value of the
-                  rituals.helmetica.io/bump-now annotation this instance last acted on.
+                  adept.helmetica.io/bump-now annotation this instance last acted on.
                   Set the annotation to any new value to move the version straight away
                   instead of waiting for the window.
                 type: string

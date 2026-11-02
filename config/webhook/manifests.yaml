@@ -10,12 +10,12 @@ webhooks:
     service:
       name: webhook-service
       namespace: system
-      path: /validate-rituals-helmetica-io-v1-maintenancewindow
+      path: /validate-adept-helmetica-io-v1-maintenancewindow
   failurePolicy: Fail
-  name: vmaintenancewindow.rituals.helmetica.io
+  name: vmaintenancewindow.adept.helmetica.io
   rules:
   - apiGroups:
-    - rituals.helmetica.io
+    - adept.helmetica.io
     apiVersions:
     - v1
     operations:

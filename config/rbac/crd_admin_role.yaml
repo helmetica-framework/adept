@@ -6,7 +6,7 @@ metadata:
     rbac.authorization.k8s.io/aggregate-to-admin: "true"
 rules:
 - apiGroups:
-  - rituals.helmetica.io
+  - adept.helmetica.io
   resources:
   - actions
   - definitions
@@ -19,7 +19,7 @@ rules:
   - update
   - watch
 - apiGroups:
-  - rituals.helmetica.io
+  - adept.helmetica.io
   resources:
   - actions/status
   - definitions/status
@@ -27,7 +27,7 @@ rules:
   verbs:
   - get
 - apiGroups:
-  - rituals.helmetica.io
+  - adept.helmetica.io
   resources:
   - maintenancewindows
   - maintenances

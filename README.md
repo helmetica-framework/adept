@@ -3,7 +3,7 @@
 **Adept**: an alchemist who has attained the secret knowledge and performs the operations.
 
 The adept executes rituals for the Helmetica framework: it watches `Action`
-CRs (`rituals.helmetica.io/v1`), creates a Kubernetes Job from the
+CRs (`adept.helmetica.io/v1`), creates a Kubernetes Job from the
 `Definition` named by `spec.type`, and tracks the Job to `Succeeded` or
 `Failed` on the Action status. Definitions are packaged into reagent charts
 by the [transmuter](https://github.com/helmetica-framework/transmuter); ferment ships defaults.
@@ -28,10 +28,10 @@ the Action was created:
 | **Ritual** | A packaged `Definition` manifest describing an operational action (e.g. restart, maintenance). See the [transmuter README](../transmuter/README.md#glossary) for the full framework glossary. |
 | **Transmuter** | The framework's chart tool: scaffolds and assays reagent charts, including the ritual Definitions the adept executes. |
 | **Reagent** | A service chart wrapping an upstream (prima materia) chart; ships the Definitions for its service instance. |
-| **Definition** | The ritual's job template (`rituals.helmetica.io/v1`, namespaced, no status). Scaffolded and assayed by the transmuter, shipped by ferment. |
+| **Definition** | The ritual's job template (`adept.helmetica.io/v1`, namespaced, no status). Scaffolded and assayed by the transmuter, shipped by ferment. |
 | **Action** | A request to run a ritual: names a Definition via `spec.type`. The adept creates one Job per Action and mirrors its outcome in `status.phase` (`Pending` → `Running` → `Succeeded`/`Failed`). Terminal phases are final; no re-runs. Failures to resolve the instance namespace or the Definition are reported in `status.message`. |
-| **MaintenanceWindow** | A named span in which maintenance may start (`rituals.helmetica.io/v1`, cluster-scoped, no status). Operators own them; instances reference one by name instead of carrying their own schedule, which is what lets maintenance be batched. One window may set `spec.default`, and instances naming no window take it. A validating webhook rejects a second window claiming it. |
-| **Maintenance** | One instance's maintenance schedule (`rituals.helmetica.io/v1`, namespaced). Names the window to start in and the ritual to run, and produces the CronJob that fires it. A reagent renders one per instance; an empty spec is a complete schedule. |
+| **MaintenanceWindow** | A named span in which maintenance may start (`adept.helmetica.io/v1`, cluster-scoped, no status). Operators own them; instances reference one by name instead of carrying their own schedule, which is what lets maintenance be batched. One window may set `spec.default`, and instances naming no window take it. A validating webhook rejects a second window claiming it. |
+| **Maintenance** | One instance's maintenance schedule (`adept.helmetica.io/v1`, namespaced). Names the window to start in and the ritual to run, and produces the CronJob that fires it. A reagent renders one per instance; an empty spec is a complete schedule. |
 
 ## Maintenance windows
 
@@ -39,7 +39,7 @@ A `MaintenanceWindow` says when maintenance may start, in an operator's local
 terms:
 
 ```yaml
-apiVersion: rituals.helmetica.io/v1
+apiVersion: adept.helmetica.io/v1
 kind: MaintenanceWindow
 metadata:
   name: sunday-night
@@ -68,7 +68,7 @@ A `Maintenance` is one instance's half of the arrangement. It lives in the
 instance namespace, and a reagent chart renders one per instance:
 
 ```yaml
-apiVersion: rituals.helmetica.io/v1
+apiVersion: adept.helmetica.io/v1
 kind: Maintenance
 metadata:
   name: my-service

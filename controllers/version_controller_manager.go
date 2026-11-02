@@ -21,8 +21,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 
-	ritualsv1 "github.com/helmetica-framework/adept/api/v1"
-	ritualsacv1 "github.com/helmetica-framework/adept/applyconfiguration/api/v1"
+	adeptv1 "github.com/helmetica-framework/adept/api/v1"
+	adeptacv1 "github.com/helmetica-framework/adept/applyconfiguration/api/v1"
 	"github.com/helmetica-framework/adept/schedule"
 )
 
@@ -55,10 +55,10 @@ const (
 // status.observedBumpRequest, so re-applying the same value does nothing and a
 // stale annotation is inert. It is never removed by the controller, which would
 // fight the chart that rendered the object.
-const bumpNowAnnotation = "rituals.helmetica.io/bump-now"
+const bumpNowAnnotation = "adept.helmetica.io/bump-now"
 
 // ManagedLabel marks the CRDs chrysopoeia generates, with an empty value
-// (customresourcedefinitionsource_controller_manager.go:341). Exported because the
+// (claimdefinition_controller_manager.go:341). Exported because the
 // manager's cache is filtered by it too, and the two selectors must agree.
 const ManagedLabel = "chrysopoeia.io/managed"
 
@@ -160,7 +160,7 @@ func (r *VersionManager) claimCRDFor(ctx context.Context, ref claimRef) (*apiext
 
 // newestVersion is the newest version the claim's schema allows. Chrysopoeia
 // sorts the enum descending when it generates the CRD
-// (customresourcedefinitionsource_controller_manager.go:309), so adept takes
+// (claimdefinition_controller_manager.go:309), so adept takes
 // the first entry and never decides what "newest" means.
 func newestVersion(crd *apiextv1.CustomResourceDefinition, ref claimRef) (string, error) {
 	i := slices.IndexFunc(crd.Spec.Versions, func(v apiextv1.CustomResourceDefinitionVersion) bool {
@@ -283,7 +283,7 @@ func (r *VersionManager) now() time.Time {
 func (r *VersionManager) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := r.Log.WithValues("maintenance", req.NamespacedName)
 
-	md := &ritualsv1.Maintenance{}
+	md := &adeptv1.Maintenance{}
 	err := r.Get(ctx, req.NamespacedName, md)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
@@ -338,7 +338,7 @@ func (r *VersionManager) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 // bump is the scheduled caller: it moves the version and watermarks the
 // maintenance it settled. Finding nothing to move means no watermark, so an
 // occurrence that could still produce a version stays outstanding.
-func (r *VersionManager) bump(ctx context.Context, md *ritualsv1.Maintenance, occurrence time.Time, log logr.Logger) error {
+func (r *VersionManager) bump(ctx context.Context, md *adeptv1.Maintenance, occurrence time.Time, log logr.Logger) error {
 	if !md.Spec.Suspend {
 		bumped, err := r.bumpVersion(ctx, md, log.WithValues("maintenance", occurrence))
 		if err != nil || !bumped {
@@ -355,7 +355,7 @@ func (r *VersionManager) bump(ctx context.Context, md *ritualsv1.Maintenance, oc
 // it is still outstanding. A request already in status.observedBumpRequest has
 // been served: the annotation stays on the object, and re-applying the same
 // value must not move the version again.
-func bumpRequested(md *ritualsv1.Maintenance) (string, bool) {
+func bumpRequested(md *adeptv1.Maintenance) (string, bool) {
 	req, ok := md.GetAnnotations()[bumpNowAnnotation]
 	if !ok {
 		return "", false
@@ -368,9 +368,9 @@ func bumpRequested(md *ritualsv1.Maintenance) (string, bool) {
 // served, not that a version was written, which is where it differs from
 // recordBump: a claim that is already newest still has to be recorded, or the
 // same annotation is re-checked on every reconcile for as long as it is there.
-func (r *VersionManager) recordBumpRequest(ctx context.Context, md *ritualsv1.Maintenance, request string) error {
-	status := ritualsacv1.Maintenance(md.Name, md.Namespace).
-		WithStatus(ritualsacv1.MaintenanceStatus().
+func (r *VersionManager) recordBumpRequest(ctx context.Context, md *adeptv1.Maintenance, request string) error {
+	status := adeptacv1.Maintenance(md.Name, md.Namespace).
+		WithStatus(adeptacv1.MaintenanceStatus().
 			WithObservedBumpRequest(request))
 
 	if err := r.Status().Apply(ctx, status, bumpFieldOwner, client.ForceOwnership); err != nil {
@@ -382,7 +382,7 @@ func (r *VersionManager) recordBumpRequest(ctx context.Context, md *ritualsv1.Ma
 // bumpVersion moves the instance's claim onto the newest version its schema
 // allows and reports whether it wrote one. Every reason to do nothing reports
 // false, because each caller watermarks on its own terms.
-func (r *VersionManager) bumpVersion(ctx context.Context, md *ritualsv1.Maintenance, log logr.Logger) (bool, error) {
+func (r *VersionManager) bumpVersion(ctx context.Context, md *adeptv1.Maintenance, log logr.Logger) (bool, error) {
 	ref, managed, err := r.claimRefFor(ctx, md.GetNamespace())
 	if err != nil {
 		return false, err
@@ -430,15 +430,15 @@ func (r *VersionManager) bumpVersion(ctx context.Context, md *ritualsv1.Maintena
 // bumpedFor reports whether this maintenance has already been acted on. The
 // wake-up is never the evidence: a restart re-lists every object, so a
 // controller that acted on being scheduled would move the whole fleet at once.
-func bumpedFor(md *ritualsv1.Maintenance, occurrence time.Time) bool {
+func bumpedFor(md *adeptv1.Maintenance, occurrence time.Time) bool {
 	return md.Status.VersionUpdatedFor != nil && md.Status.VersionUpdatedFor.Time.Equal(occurrence)
 }
 
 // recordBump writes the watermark. Its own field manager, so it can share the
 // status with MaintenanceManager without either taking the other's fields.
-func (r *VersionManager) recordBump(ctx context.Context, md *ritualsv1.Maintenance, occurrence time.Time) error {
-	status := ritualsacv1.Maintenance(md.Name, md.Namespace).
-		WithStatus(ritualsacv1.MaintenanceStatus().
+func (r *VersionManager) recordBump(ctx context.Context, md *adeptv1.Maintenance, occurrence time.Time) error {
+	status := adeptacv1.Maintenance(md.Name, md.Namespace).
+		WithStatus(adeptacv1.MaintenanceStatus().
 			WithVersionUpdatedFor(metav1.NewTime(occurrence)))
 
 	if err := r.Status().Apply(ctx, status, versionFieldOwner, client.ForceOwnership); err != nil {
@@ -459,7 +459,7 @@ func (r *VersionManager) MaintenanceWindowMapFunc(ctx context.Context, o client.
 func (r *VersionManager) SetupWithManager(name string, mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		Named(name).
-		For(&ritualsv1.Maintenance{}).
-		Watches(&ritualsv1.MaintenanceWindow{}, handler.EnqueueRequestsFromMapFunc(r.MaintenanceWindowMapFunc)).
+		For(&adeptv1.Maintenance{}).
+		Watches(&adeptv1.MaintenanceWindow{}, handler.EnqueueRequestsFromMapFunc(r.MaintenanceWindowMapFunc)).
 		Complete(r)
 }

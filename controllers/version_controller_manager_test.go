@@ -23,7 +23,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	ritualsv1 "github.com/helmetica-framework/adept/api/v1"
+	adeptv1 "github.com/helmetica-framework/adept/api/v1"
 	"github.com/helmetica-framework/adept/schedule"
 )
 
@@ -38,7 +38,7 @@ func versionManager(objs ...client.Object) (*VersionManager, client.Client) {
 
 	c := fake.NewClientBuilder().
 		WithScheme(scheme).
-		WithStatusSubresource(&ritualsv1.Maintenance{}, claimKind).
+		WithStatusSubresource(&adeptv1.Maintenance{}, claimKind).
 		WithObjects(objs...).
 		Build()
 	return &VersionManager{Client: c, Scheme: scheme,
@@ -154,14 +154,14 @@ func dueAt(t *testing.T, now time.Time) time.Time {
 	return occurrence
 }
 
-func bumpedMaintenance(occurrence time.Time) *ritualsv1.Maintenance {
+func bumpedMaintenance(occurrence time.Time) *adeptv1.Maintenance {
 	md := maintenance("sunday-night")
 	md.Status.VersionUpdatedFor = ptr.To(metav1.NewTime(occurrence))
 	return md
 }
 
 // requestedMaintenance carries an outstanding bump-now annotation.
-func requestedMaintenance(request string) *ritualsv1.Maintenance {
+func requestedMaintenance(request string) *adeptv1.Maintenance {
 	md := maintenance("sunday-night")
 	md.Annotations = map[string]string{bumpNowAnnotation: request}
 	return md
@@ -174,9 +174,9 @@ func shut(t *testing.T) time.Time {
 	return at(t, 9, 16, 12, 0)
 }
 
-func getVersionMaintenance(t *testing.T, c client.Client) *ritualsv1.Maintenance {
+func getVersionMaintenance(t *testing.T, c client.Client) *adeptv1.Maintenance {
 	t.Helper()
-	got := &ritualsv1.Maintenance{}
+	got := &adeptv1.Maintenance{}
 	require.NoError(t, c.Get(context.Background(),
 		types.NamespacedName{Name: "maintenance", Namespace: "svc"}, got))
 	return got
@@ -396,7 +396,7 @@ func TestVersion_NoAnnotationMeansNoManualBump(t *testing.T) {
 
 // suspendedMaintenance is an instance whose maintenance is switched off,
 // optionally carrying a bump-now annotation as well.
-func suspendedMaintenance(request string) *ritualsv1.Maintenance {
+func suspendedMaintenance(request string) *adeptv1.Maintenance {
 	md := maintenance("sunday-night")
 	md.Spec.Suspend = true
 	if request != "" {

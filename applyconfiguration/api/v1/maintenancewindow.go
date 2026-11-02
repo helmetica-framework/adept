@@ -29,7 +29,7 @@ func MaintenanceWindow(name string) *MaintenanceWindowApplyConfiguration {
 	b := &MaintenanceWindowApplyConfiguration{}
 	b.WithName(name)
 	b.WithKind("MaintenanceWindow")
-	b.WithAPIVersion("rituals.helmetica.io/v1")
+	b.WithAPIVersion("adept.helmetica.io/v1")
 	return b
 }
 
@@ -49,7 +49,7 @@ func ExtractMaintenanceWindowFrom(maintenanceWindow *apiv1.MaintenanceWindow, fi
 	b.WithName(maintenanceWindow.Name)
 
 	b.WithKind("MaintenanceWindow")
-	b.WithAPIVersion("rituals.helmetica.io/v1")
+	b.WithAPIVersion("adept.helmetica.io/v1")
 	return b, nil
 }
 
