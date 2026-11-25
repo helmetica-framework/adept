@@ -1,0 +1,40 @@
+= Maintenance per instance
+
+A `Maintenance` is one instance's half of the arrangement. It lives in the
+instance namespace, and a reagent chart renders one per instance:
+
+[source,yaml]
+----
+apiVersion: adept.helmetica.io/v1
+kind: Maintenance
+metadata:
+  name: my-service
+spec:
+  window: sunday-night   # empty takes the default window
+  ritual: maintenance    # the Definition to run, in this namespace
+  suspend: false         # stops maintenance without losing the schedule
+----
+
+Every field is optional, so `spec: {}` is a complete schedule: the default
+window, and the `maintenance` ritual the reagent ships.
+
+The adept turns it into a CronJob in the same namespace, owned by the
+`Maintenance`, and reports what the instance settled on:
+
+[source,bash]
+----
+kubectl get maintenances
+NAME         WINDOW         RITUAL        SCHEDULE            SUSPENDED
+my-service   sunday-night   maintenance   27 3 * * 1,2,3,4,5   false
+----
+
+`status.schedule` is where to look for when an instance actually runs. Instances
+sharing a window are spread across it by a hash of the `Maintenance`'s
+`namespace/name`, so they do not all start at once, and the offset stays put
+across chart upgrades. The offset can push a start past midnight, which is why
+the days above are shifted one on from the window's. When nothing resolves, the
+reason is in `status.message` and the adept retries with backoff, since a chart
+may render the `Maintenance` before the window or the ritual exists.
+
+`spec.suspend` sets the CronJob's own `suspend` rather than deleting it, so a
+suspended instance still shows up in `kubectl get cronjobs`.

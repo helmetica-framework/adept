@@ -1,0 +1,33 @@
+= Install and try it
+
+Against a kind (or any) cluster:
+
+[source,bash]
+----
+kubectl apply -k config/crd --server-side
+just run          # in a second terminal
+kubectl apply -k config/samples
+kubectl get actions -w   # TYPE=restart, PHASE Pending -> Running -> Succeeded/Failed
+----
+
+The samples create a `restart` Definition (kubectl rollout restart of a
+deployment), a `restart-now` Action that executes it, a `sunday-night`
+MaintenanceWindow, a `maintenance` Definition, and a `my-service` Maintenance
+that schedules it:
+
+[source,bash]
+----
+kubectl get maintenances,cronjobs
+----
+
+Full deployment (CRDs, RBAC, manager, webhook) is packaged under
+`config/default`:
+
+[source,bash]
+----
+kubectl apply -k config/default --server-side
+----
+
+That overlay needs https://cert-manager.io[cert-manager] in the cluster. The
+`MaintenanceWindow` validating webhook is served over TLS; cert-manager issues
+the certificate and injects its CA into the webhook configuration.

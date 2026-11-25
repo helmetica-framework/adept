@@ -1,0 +1,22 @@
+= Adept
+
+*Adept*: an alchemist who has attained the secret knowledge and performs the operations.
+
+The adept executes rituals for the Helmetica framework: it watches `Action`
+CRs (`adept.helmetica.io/v1`), creates a Kubernetes Job from the
+`Definition` named by `spec.type`, and tracks the Job to `Succeeded` or
+`Failed` on the Action status. Definitions are packaged into reagent charts
+by the xref:transmuter::index.adoc[transmuter]; ferment ships defaults.
+
+The Definition and Job live in the *instance namespace*, resolved from where
+the Action was created:
+
+* *Instance namespace* (label `chrysopoeia.io/instance`): the Action runs
+  in place. A namespace without any `chrysopoeia.io/*` annotation is not
+  chryso-managed (e.g. the instance is plain helm-installed) and the Action
+  also runs in place, even if it carries a claim reference.
+* *Claim namespace*: the Action names its claim (`spec.claim`,
+  `spec.apiVersion`, `spec.kind`); the adept reads the claim's
+  `status.instanceNamespace` and runs the Job there. Until the claim
+  resolves, the failure is reported in the Action's `status.message` and
+  retried with exponential backoff.

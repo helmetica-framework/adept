@@ -1,0 +1,4 @@
+= Out of scope (for now)
+
+* `spec.args` injection into the Job — stored, not injected.
+* Re-runs on spec change: terminal Action phases are final.

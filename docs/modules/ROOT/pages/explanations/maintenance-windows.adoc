@@ -1,0 +1,29 @@
+= Maintenance windows
+
+A `MaintenanceWindow` says when maintenance may start, in an operator's local
+terms:
+
+[source,yaml]
+----
+apiVersion: adept.helmetica.io/v1
+kind: MaintenanceWindow
+metadata:
+  name: sunday-night
+spec:
+  daysOfWeek: [sunday, monday, tuesday, wednesday, thursday]
+  time: "22:00"
+  duration: 6h
+  timeZone: Europe/Zurich
+----
+
+They are cluster-scoped: a handful of named windows serve instances across
+every namespace, so a lot of instances can be maintained on one shared
+schedule.
+
+The duration is the time span when maintenance jobs may start.
+It's not bound, so a job that starts 5 minutes before the window ends will still continue.
+
+One window may set `spec.default`. Instances that name no window take it, so an
+operator can move the whole fleet by editing one object. The validating webhook
+rejects a second window claiming the default, since two of them would make the
+choice arbitrary.
