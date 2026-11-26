@@ -1,0 +1,15 @@
+* xref:index.adoc[Overview]
+
+.Explanations
+* xref:explanations/glossary.adoc[Glossary]
+* xref:explanations/maintenance-windows.adoc[Maintenance windows]
+* xref:explanations/maintenance.adoc[Maintenance per instance]
+* xref:explanations/limitations.adoc[Out of scope (for now)]
+* xref:explanations/architecture.adoc[explanations/architecture.adoc]
+
+.How-tos
+* xref:how-tos/install.adoc[Install and try it]
+* xref:how-tos/develop.adoc[how-tos/develop.adoc]
+
+.References
+* xref:references/configuration.adoc[references/configuration.adoc]
